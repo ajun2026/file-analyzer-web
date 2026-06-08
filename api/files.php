@@ -13,9 +13,9 @@ foreach ($dirs as $dir) {
     $originalSize = 0;
     $extracted = is_dir($dir . '/extracted');
     
-    // 找原始文件
+    // 找原始文件（跳过 extracted 目录和 _meta.json 缓存）
     foreach (glob($dir . '/*') as $f) {
-        if (is_file($f) && basename($f) !== 'extracted') {
+        if (is_file($f) && basename($f) !== 'extracted' && basename($f) !== '_meta.json') {
             $originalFile = basename($f);
             $originalSize = filesize($f);
             break;
