@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件分析平台</title>
+    <link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📁 文件分析平台</h1>
+            <p>上传压缩包，自动解压，AI 智能分析</p>
+        </header>
+
+        <!-- 上传区域 -->
+        <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📤</div>
+            <p>拖拽文件到此处，或点击上传</p>
+            <p class="upload-hint">支持 ZIP / TAR.GZ / 7Z / RAR 格式</p>
+            <input type="file" id="fileInput" accept=".zip,.tar,.gz,.tgz,.bz2,.tbz2,.7z,.rar" hidden>
+            <div class="upload-progress hidden" id="uploadProgress">
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <span id="progressText">上传中...</span>
+            </div>
+        </div>
+
+        <!-- 文件列表 -->
+        <div class="file-list" id="fileList">
+            <h2>已上传文件</h2>
+            <div class="file-grid" id="fileGrid">
+                <div class="empty-state">暂无文件，请上传</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast hidden" id="toast"></div>
+    <script src="js/main.js?v=4"></script>
+</body>
+</html>

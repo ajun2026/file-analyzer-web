@@ -1,0 +1,19 @@
+# 敏感配置
+config.php
+api/config.php
+
+# 上传数据
+uploads/
+
+# 缓存
+**/_meta.json
+
+# 备份
+*.bak*
+
+# 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

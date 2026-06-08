@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件分析</title>
+    <link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body class="analysis-page">
+    <div class="analysis-container">
+        <!-- 左侧：文件面板 -->
+        <aside class="file-panel" id="filePanel">
+            <div class="panel-header">
+                <a href="/" class="back-btn">← 返回</a>
+                <h3>📂 文件列表</h3>
+            </div>
+            <div class="file-tree" id="fileTree">
+                <div class="loading">加载中...</div>
+            </div>
+        </aside>
+
+        <!-- 中间分隔线 -->
+        <div class="resizer" id="resizer"></div>
+
+        <!-- 右侧：对话 + 文件查看 -->
+        <main class="main-panel">
+            <!-- 上半：文件内容 -->
+            <div class="file-viewer" id="fileViewer">
+                <div class="viewer-header">
+                    <span class="viewer-title" id="viewerTitle">选择一个文件查看</span>
+                    <span class="viewer-info" id="viewerInfo"></span>
+                </div>
+                <div class="viewer-content" id="viewerContent">
+                    <div class="viewer-placeholder">👈 点击左侧文件查看内容</div>
+                </div>
+            </div>
+
+            <!-- 水平分隔条 -->
+            <div class="h-resizer" id="hResizer"></div>
+
+            <!-- 下半：AI 对话框 -->
+            <div class="chat-panel">
+                <div class="chat-header">
+                    🤖 AI 文件分析助手
+                    <button id="clearChatBtn" class="clear-chat-btn" title="清除聊天记录">🗑️</button>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-welcome">
+                        <p>👋 你好！我是 AI 文件分析助手。</p>
+                        <p>我已经读取了你上传的所有文件内容，你可以问我任何关于这些文件的问题。</p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <textarea id="chatInput" placeholder="输入你的问题..." rows="2"></textarea>
+                    <button id="sendBtn" title="发送">➤</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/analysis.js?v=7"></script>
+</body>
+</html>
