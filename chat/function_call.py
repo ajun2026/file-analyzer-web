@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from detectors import detect_encoding
 from analyzers.dump_parser import parse_single_dump
 
-DEEPSEEK_API_KEY = "sk-your-deepseek-api-key"
+DEEPSEEK_API_KEY = "sk-your-deepseek-api-key"  # 在此填入你的 API Key
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # In-memory chat history per job
