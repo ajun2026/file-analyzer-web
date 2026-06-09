@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日志分析中心</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.6; min-height: 100vh; }
+        .header { background: #161b22; border-bottom: 1px solid #21262d; padding: 12px 24px; position: sticky; top: 0; z-index: 10;
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .header a { color: #58a6ff; text-decoration: none; font-size: 14px; }
+        .header h1 { font-size: 18px; color: #f0f6fc; flex: 1; }
+        .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 52px); }
+        @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }
+        .sidebar { background: #161b22; border-right: 1px solid #21262d; padding: 16px; overflow-y: auto; }
+        .sidebar h3 { font-size: 14px; color: #8b949e; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        .file-tree { font-size: 13px; }
+        .tree-dir { color: #58a6ff; font-weight: 600; cursor: pointer; padding: 3px 0; display: flex; align-items: center; gap: 4px; }
+        .tree-dir:hover { color: #79c0ff; }
+        .tree-dir .arrow { font-size: 10px; width: 12px; display: inline-block; transition: transform 0.15s; }
+        .tree-dir .arrow.open { transform: rotate(90deg); }
+        .tree-file { color: #8b949e; padding: 2px 0 2px 20px; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px;
+            display: flex; justify-content: space-between; }
+        .tree-file .cat { font-size: 10px; padding: 1px 6px; border-radius: 8px; }
+        .cat-events { background: #0d2b4e; color: #58a6ff; }
+        .cat-dump { background: #490202; color: #f85149; }
+        .cat-hardware { background: #0d3320; color: #3fb950; }
+        .cat-siolog { background: #2e1e00; color: #d29922; }
+        .cat-text { background: #21262d; color: #8b949e; }
+        .tree-children { display: none; padding-left: 12px; }
+        .tree-children.open { display: block; }
+        .file-count { font-size: 11px; color: #484f58; }
+        .main { padding: 24px; }
+        .tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; border-bottom: 1px solid #21262d; padding-bottom: 12px; }
+        .tab { padding: 8px 20px; border-radius: 6px 6px 0 0; font-size: 14px; cursor: pointer; background: #21262d; color: #8b949e;
+            border: 1px solid transparent; transition: all 0.15s; white-space: nowrap; }
+        .tab:hover { color: #c9d1d9; border-color: #30363d; }
+        .tab.active { background: #0d1117; color: #58a6ff; border-color: #1f6feb; border-bottom-color: #0d1117; font-weight: 600; }
+        .tab-content { min-height: 300px; }
+        .loading { text-align: center; padding: 60px; color: #8b949e; }
+        .loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #21262d; border-top-color: #58a6ff;
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Report styles (inherited from report.html) */
+        .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .card h3 { font-size: 16px; color: #f0f6fc; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
+        th { color: #8b949e; font-weight: 600; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-critical { background: #490202; color: #f85149; }
+        .badge-error { background: #3d1e00; color: #d29922; }
+        .badge-info { background: #0d2b4e; color: #58a6ff; }
+        .badge-ok { background: #0d3320; color: #3fb950; }
+        .badge-warning { background: #3d1e00; color: #d29922; }
+        .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+        .alert-critical { background: #490202; border: 1px solid #f85149; color: #f85149; }
+        .alert-warning { background: #3d1e00; border: 1px solid #d29922; color: #d29922; }
+        .alert-info { background: #0d2b4e; border: 1px solid #58a6ff; color: #58a6ff; }
+        .alert-ok { background: #0d3320; border: 1px solid #3fb950; color: #3fb950; }
+        .alert-summary { padding: 20px; font-size: 15px; line-height: 1.8; }
+        .alert-summary h3 { font-size: 20px; margin-bottom: 16px; }
+        .event-list { max-height: 500px; overflow-y: auto; }
+        .event-item { padding: 8px 12px; border-bottom: 1px solid #21262d36; font-size: 13px; font-family: "SF Mono", "Fira Code", monospace; }
+        .stat-box { text-align: center; padding: 16px; background: #0d1117; border-radius: 8px; }
+        .stat-box .number { font-size: 32px; font-weight: 700; color: #f0f6fc; }
+        .stat-box .label { font-size: 13px; color: #8b949e; margin-top: 4px; }
+        .file-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .file-chip { background: #21262d; padding: 4px 12px; border-radius: 14px; font-size: 12px; color: #8b949e; }
+        /* File preview modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100;
+            justify-content: center; align-items: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; max-width: 900px; width: 90%; max-height: 85vh;
+            display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #21262d; }
+        .modal-header h2 { font-size: 16px; color: #f0f6fc; }
+        .modal-close { background: none; border: none; color: #8b949e; font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+        .modal-close:hover { color: #f0f6fc; background: #21262d; }
+        .modal-meta { font-size: 12px; color: #484f58; padding: 8px 20px; background: #0d1117; border-bottom: 1px solid #21262d; }
+        .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+        .modal-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all;
+            color: #c9d1d9; line-height: 1.5; margin: 0; }
+        .tree-file.clickable { cursor: pointer; }
+        .tree-file.clickable:hover { color: #58a6ff; background: #1c2333; border-radius: 4px; }
+        /* Chat UI */
+        .chat-container { display: flex; flex-direction: column; height: calc(100vh - 160px); }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 8px 0; }
+        .chat-msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; max-width: 90%; font-size: 14px; line-height: 1.6; }
+        .chat-msg.user { background: #1f6feb; color: #f0f6fc; margin-left: auto; border-bottom-right-radius: 4px; }
+        .chat-msg.assistant { background: #161b22; color: #c9d1d9; border: 1px solid #21262d; margin-right: auto; border-bottom-left-radius: 4px; }
+        .chat-msg p { margin: 4px 0; }
+        .chat-msg code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+        .chat-msg pre { background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
+        .chat-msg ul, .chat-msg ol { padding-left: 20px; margin: 4px 0; }
+        .chat-input-wrap { display: flex; gap: 8px; padding: 12px 0; border-top: 1px solid #21262d; }
+        .chat-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px;
+            color: #c9d1d9; font-size: 14px; font-family: inherit; resize: none; outline: none; }
+        .chat-input:focus { border-color: #58a6ff; }
+        .chat-send { background: #1f6feb; color: #fff; border: none; border-radius: 8px; padding: 10px 18px;
+            cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap; }
+        .chat-send:hover { background: #388bfd; }
+        .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+        .chat-typing { color: #8b949e; font-size: 13px; padding: 8px 14px; }
+        /* BMC/Other layout: file viewer + AI chat */
+        .other-layout { display: flex; flex-direction: column; height: calc(100vh - 52px); }
+        .other-viewer { flex: 1; display: flex; flex-direction: column; border-bottom: 1px solid #21262d; min-height: 200px; }
+        .other-viewer-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px;
+            background: #161b22; border-bottom: 1px solid #21262d; font-size: 14px; color: #f0f6fc; }
+        .other-viewer-body { flex: 1; overflow-y: auto; padding: 16px; }
+        .other-viewer-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap;
+            word-break: break-all; color: #c9d1d9; line-height: 1.5; margin: 0; }
+        .other-viewer-body iframe { width: 100%; height: 100%; border: none; }
+        .other-chat { height: 320px; display: flex; flex-direction: column; border-top: 1px solid #21262d; }
+        .other-chat .chat-container { display: flex; flex-direction: column; height: 100%; }
+        .other-chat .chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; }
+        .other-chat .chat-input-wrap { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #21262d; }
+        .other-chat .chat-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+            padding: 8px 12px; color: #c9d1d9; font-size: 14px; font-family: inherit; resize: none; outline: none; }
+        .other-chat .chat-input:focus { border-color: #58a6ff; }
+        .other-chat .chat-send { background: #1f6feb; color: #fff; border: none; border-radius: 8px;
+            padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap; }
+        .other-chat .chat-send:hover { background: #388bfd; }
+        .other-chat .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+        .other-chat .chat-msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 10px;
+            max-width: 90%; font-size: 14px; line-height: 1.6; }
+        .other-chat .chat-msg.user { background: #1f6feb; color: #f0f6fc; margin-left: auto; border-bottom-right-radius: 4px; }
+        .other-chat .chat-msg.assistant { background: #161b22; color: #c9d1d9; border: 1px solid #21262d;
+            margin-right: auto; border-bottom-left-radius: 4px; }
+        .other-chat .chat-msg p { margin: 4px 0; }
+        .other-chat .chat-msg code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+        .other-chat .chat-msg pre { background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
+        .other-chat .chat-msg ul, .other-chat .chat-msg ol { padding-left: 20px; margin: 4px 0; }
+        .other-chat .chat-typing { color: #8b949e; font-size: 13px; padding: 6px 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="/log-analyzer/">← 返回首页</a>
+        <h1 id="page-title">🔬 日志分析中心</h1>
+        <span style="font-size:12px;color:#8b949e;" id="job-id-display"></span>
+    </div>
+    <div class="layout">
+        <div class="sidebar" id="sidebar">
+            <h3>📁 诊断文件</h3>
+            <div class="file-tree" id="file-tree">
+                <div class="loading" style="padding:20px;"><div class="spinner"></div><p>加载中...</p></div>
+            </div>
+        </div>
+        <div class="main">
+            {% if os_type in ('bmc', 'other') %}
+            <!-- === BMC/Other: file-explorer + AI chat layout === -->
+            <div class="other-layout">
+                <div class="other-viewer" id="other-viewer">
+                    <div class="other-viewer-header">
+                        <span id="other-viewer-title">📄 文件内容查看器</span>
+                        <span style="font-size:12px;color:#484f58;" id="other-viewer-path"></span>
+                    </div>
+                    <div class="other-viewer-body" id="other-viewer-body">
+                        <div style="text-align:center;color:#8b949e;padding:60px 20px;">
+                            <div style="font-size:48px;margin-bottom:16px;">📂</div>
+                            <p style="font-size:16px;margin-bottom:8px;">选择左侧文件树中的文件以查看内容</p>
+                            <p style="font-size:13px;">或直接在下方 AI 对话框中提问</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="other-chat" id="other-chat">
+                    <div class="chat-container" id="chat-container">
+                        <div class="chat-messages" id="chat-messages">
+                            <div style="text-align:center;color:#8b949e;padding:40px 20px;">
+                                <div style="font-size:36px;margin-bottom:12px;">🤖</div>
+                                <p style="font-size:14px;">AI 日志分析助手</p>
+                                <p style="font-size:12px;">已加载所有文件内容，可以直接提问</p>
+                            </div>
+                        </div>
+                        <div class="chat-input-wrap">
+                            <textarea class="chat-input" id="chat-input" rows="2" placeholder="输入问题，按 Enter 发送..."></textarea>
+                            <button class="chat-send" id="chat-send-btn">发送</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <!-- === Windows / Linux: tabbed analysis === -->
+            <div class="tabs" id="tabs">
+                {% if os_type == 'linux' %}
+                <div class="tab" data-type="linux_overview">📄 系统概览</div>
+                <div class="tab" data-type="linux_kernel">🔧 内核诊断</div>
+                <div class="tab" data-type="linux_syslog">📋 系统日志</div>
+                <div class="tab" data-type="linux_summary">📊 整体总结</div>
+                <div class="tab" data-type="chat">🤖 AI 分析</div>
+                {% elif os_type == 'windows' %}
+                <div class="tab" data-type="overview">📄 系统概览</div>
+                <div class="tab" data-type="diagnostics">📋 系统诊断</div>
+                <div class="tab" data-type="dump">💾 Dump 分析</div>
+                <div class="tab" data-type="siolog">📋 SIOlog</div>
+                <div class="tab" data-type="summary">📊 整体总结</div>
+                <div class="tab" data-type="chat">🤖 AI 分析</div>
+                {% endif %}
+            </div>
+            <div class="tab-content" id="tab-content">
+                <div class="loading" id="loading"><div class="spinner"></div><p>加载中...</p></div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    <!-- File Preview Modal -->
+    <div class="modal-overlay" id="file-modal" onclick="if(event.target===this)closeFileModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">📄 文件预览</h2>
+                <button class="modal-close" onclick="closeFileModal()">✕</button>
+            </div>
+            <div class="modal-meta" id="modal-meta"></div>
+            <div class="modal-body"><pre id="modal-content">加载中...</pre></div>
+        </div>
+    </div>
+    <script>
+        const urlParts = window.location.pathname.split('/');
+        const jobId = '{{ job_id }}';
+        document.getElementById('job-id-display').textContent = 'ID: ' + jobId;
+        const osType = '{{ os_type }}';
+        const isOtherLayout = osType === 'bmc' || osType === 'other';
+        let currentType = isOtherLayout ? 'chat' : '{{ "linux_summary" if os_type == "linux" else "summary" }}';
+        let analysisCache = {};
+        // Load file tree
+        fetch('../api/files/' + jobId)
+            .then(r => r.json())
+            .then(buildTree)
+            .catch(err => {
+                document.getElementById('file-tree').innerHTML = '<p style="color:#f85149">加载失败</p>';
+            });
+        function buildTree(data) {
+            const el = document.getElementById('file-tree');
+            let html = `<p style="font-size:11px;color:#484f58;margin-bottom:8px;">${data.total_files} 个文件</p>`;
+            function render(items, depth) {
+                for (const item of items) {
+                    if (item.type === 'dir') {
+                        const id = 'dir-' + item.name + '-' + Math.random().toString(36).slice(2,6);
+                        html += `<div class="tree-dir" onclick="toggleDir('${id}')"><span class="arrow" id="${id}-arrow">▶</span> 📁 ${esc(item.name)}</div>`;
+                        html += `<div class="tree-children" id="${id}">`;
+                        if (item.children) render(item.children, depth + 1);
+                        html += '</div>';
+                    } else {
+                        const kb = item.size ? (item.size/1024).toFixed(1) : 0;
+                        const cat = item.category || '';
+                        const catClass = cat ? 'cat-' + cat : '';
+                        // Determine if file is clickable
+                        const ext = (item.name || '').split('.').pop().toLowerCase();
+                        const readable = ['txt','log','rom','csv','xml','ini','cfg','inf'].includes(ext) && item.size < 500*1024;
+                        const isDump = ext === 'dmp' && item.size > 0;
+                        const clickable = readable || isDump;
+                        const cls = clickable ? 'tree-file clickable' : 'tree-file';
+                        const handler = isDump
+                            ? `onclick="event.stopPropagation();${isOtherLayout ? `openDumpInViewer('${escAttr(item.path)}','${escAttr(item.name)}')` : `openDumpDetail('${escAttr(item.path)}','${escAttr(item.name)}')`}"`
+                            : readable ? `onclick="event.stopPropagation();${isOtherLayout ? `openFileInViewer('${escAttr(item.path)}','${escAttr(item.name)}')` : `openFile('${escAttr(item.path)}','${escAttr(item.name)}')`}"` : '';
+                        html += `<div class="${cls}"${handler ? ' ' + handler : ''}>`;
+                        html += `<span>📄 ${esc(item.name)}</span>`;
+                        html += `<span style="display:flex;align-items:center;gap:6px;">`;
+                        if (cat) html += `<span class="cat ${catClass}">${cat}</span>`;
+                        html += `<span class="file-count">${kb}KB</span></span></div>`;
+                    }
+                }
+            }
+            render(data.tree || [], 0);
+            el.innerHTML = html;
+            // Open first level dirs
+            setTimeout(() => {
+                document.querySelectorAll('.tree-dir').forEach(d => {
+                    const childId = d.nextElementSibling?.id;
+                    if (childId) toggleDir(childId, true);
+                });
+            }, 100);
+        }
+        function toggleDir(id, force) {
+            const el = document.getElementById(id);
+            const arrow = document.getElementById(id + '-arrow');
+            if (!el || !arrow) return;
+            const isOpen = el.classList.contains('open');
+            if (force !== undefined ? force : !isOpen) {
+                el.classList.add('open');
+                arrow.classList.add('open');
+            } else {
+                el.classList.remove('open');
+                arrow.classList.remove('open');
+            }
+        }
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const newType = this.dataset.type;
+                if (newType === currentType) return;
+                currentType = newType;
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                if (newType === 'chat') {
+                    renderChat();
+                } else {
+                    document.getElementById('tab-content').innerHTML = '<div class="loading"><div class="spinner"></div><p>分析中...</p></div>';
+                }
+                runAnalysis(newType);
+            });
+        });
+        async function runAnalysis(type) {
+            if (type === 'chat') return;
+            // Check cache
+            const cacheKey = jobId + '_' + type;
+            if (analysisCache[cacheKey]) {
+                renderResult(type, analysisCache[cacheKey]);
+                return;
+            }
+            try {
+                // Trigger analysis
+                const resp = await fetch('../api/analyze/' + jobId + '?analysis_type=' + type, { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'started') {
+                    await pollAnalysis(type);
+                } else if (data.status === 'ready') {
+                    loadReportData(type);
+                }
+            } catch (err) {
+                document.getElementById('tab-content').innerHTML =
+                    '<div class="alert alert-critical">分析失败: ' + err.message + '</div>';
+            }
+        }
+        async function pollAnalysis(type) {
+            for (let i = 0; i < 180; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const resp = await fetch('../api/status/' + jobId);
+                    const data = await resp.json();
+                    if (data.status === 'done') { loadReportData(type); return; }
+                    if (data.status === 'error') {
+                        document.getElementById('tab-content').innerHTML =
+                            '<div class="alert alert-critical">' + (data.error || '分析失败') + '</div>';
+                        return;
+                    }
+                } catch (e) {}
+            }
+            document.getElementById('tab-content').innerHTML = '<div class="alert alert-warning">分析超时，请重试</div>';
+        }
+        function loadReportData(type) {
+            document.getElementById('tab-content').innerHTML = '<div class="loading"><div class="spinner"></div><p>加载报告...</p></div>';
+            fetch('../api/report/' + jobId + '?type=' + type)
+                .then(r => r.json())
+                .then(data => {
+                    analysisCache[jobId + '_' + type] = data;
+                    renderResult(type, data);
+                })
+                .catch(err => {
+                    document.getElementById('tab-content').innerHTML =
+                        '<div class="alert alert-critical">加载失败: ' + err.message + '</div>';
+                });
+        }
+        function renderResult(type, data) {
+            document.getElementById('page-title').textContent = data.title || '分析报告';
+            switch(type) {
+                case 'summary': renderSummary(data); break;
+                case 'dump': renderDump(data); break;
+                case 'diagnostics': renderDiagnostics(data); break;
+                case 'siolog': renderSiolog(data); break;
+                case 'overview': renderOverview(data); break;
+                case 'linux_overview': renderLinuxOverview(data); break;
+                case 'linux_kernel': renderLinuxKernel(data); break;
+                case 'linux_syslog': renderLinuxSyslog(data); break;
+                case 'linux_summary': renderLinuxSummary(data); break;
+                case 'chat': break;
+            }
+        }
+        // ── Renderers ──
+        function renderSummary(data) {
+            const el = document.getElementById('tab-content');
+            const sev = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#58a6ff'};
+            const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320', normal:'#0d2b4e'};
+            const sevBorder = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#1f6feb'};
+            const icons = {critical:'🔴', warning:'🟡', ok:'🟢', normal:'🔵'};
+            const s = sev[data.severity] || '#58a6ff';
+            let html = `<div class="alert alert-summary" style="background:${sevBg[data.severity]};border:2px solid ${sevBorder[data.severity]};color:${s}">`;
+            html += `<h3>${icons[data.severity]||'🔵'} ${data.title}</h3>`;
+            html += '<ul style="list-style:none;padding:0;">';
+            for (const f of data.findings || []) {
+                html += `<li style="padding:6px 0;font-size:15px;">${f}</li>`;
+            }
+            html += '</ul></div>';
+            // Detail links
+            html += '<div class="grid-2">';
+            for (const [k, v] of Object.entries(data.detail || {})) {
+                html += `<div class="card" style="cursor:pointer" onclick="document.querySelector('.tab[data-type=\\'${k}\\']').click()">
+                    <h3>${v.title || k}</h3>
+                    <p style="color:#8b949e;font-size:13px;">${v.summary || '点击查看详情 →'}</p>
+                </div>`;
+            }
+            html += '</div>';
+            el.innerHTML = html;
+        }
+        function renderOverview(data) {
+            const el = document.getElementById('tab-content');
+            let html = '';
+            const sys = data.system || {};
+            const gpu = data.gpu || {};
+            const disks = data.disks || [];
+            const sio = data.sio || {};
+            // ── System info card ──
+            html += '<div class="card"><h3>🖥️ 系统信息</h3><div class="grid-2">';
+            const sysRows = [
+                ['主机名', sys.hostname], ['OS', sys.os_name], ['OS 版本', sys.os_version],
+                ['系统制造商', sys.manufacturer], ['系统型号', sys.model], ['系统类型', sys.system_type],
+                ['BIOS', sys.bios_version], ['安装日期', sys.install_date], ['启动时间', sys.boot_time],
+                ['物理内存', sys.total_memory ? sys.total_memory + ' MB' : ''], ['可用内存', sys.available_memory ? sys.available_memory + ' MB' : ''],
+                ['域/工作组', sys.domain], ['注册用户', sys.registered_owner], ['注册组织', sys.registered_org],
+            ];
+            for (const [l, v] of sysRows) {
+                if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+            }
+            html += '</div></div>';
+            // ── CPU card ──
+            if (sys.cpu) {
+                html += `<div class="card"><h3>🔲 处理器</h3><p style="font-size:14px;"><strong>${esc(sys.cpu)}</strong></p></div>`;
+            }
+            // ── GPU card ──
+            if (Object.keys(gpu).length > 0) {
+                html += '<div class="card"><h3>🎮 显卡</h3><div class="grid-2">';
+                for (const [l, v] of [['显卡', gpu.name], ['芯片', gpu.chip],
+                    ['专用显存', gpu.dedicated_memory], ['当前分辨率', gpu.current_mode],
+                    ['驱动版本', gpu.driver_version], ['驱动日期', gpu.driver_date]]) {
+                    if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+                }
+                html += '</div></div>';
+            }
+            // ── Disks card ──
+            if (disks.length > 0) {
+                html += `<div class="card"><h3>💿 磁盘 (${disks.length} 个)</h3>`;
+                for (const d of disks) {
+                    html += '<div style="background:#0d1117;padding:12px;border-radius:6px;margin-bottom:8px;">';
+                    html += `<strong>${esc(d.model || d.vendor || '未知磁盘')}</strong>`;
+                    if (d.capacity) html += `<span style="color:#8b949e;font-size:12px;margin-left:8px;">${esc(d.capacity)}</span>`;
+                    if (d.rpm) html += `<span style="color:#8b949e;font-size:12px;margin-left:8px;">${esc(d.rpm)}</span>`;
+                    html += '<div style="font-size:12px;color:#484f58;margin-top:4px;">';
+                    if (d.serial) html += `SN: ${esc(d.serial)} &nbsp;`;
+                    if (d.firmware) html += `固件: ${esc(d.firmware)} &nbsp;`;
+                    if (d.smart) html += `SMART: ${esc(d.smart)}`;
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+            // ── NICs card ──
+            const nics = sys.nics || [];
+            if (nics.length > 0) {
+                html += `<div class="card"><h3>🌐 网卡 (${nics.length} 个)</h3>`;
+                for (const n of nics) {
+                    html += '<div style="background:#0d1117;padding:10px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
+                    html += `<strong>${esc(n.name)}</strong>`;
+                    html += `<span style="color:#8b949e;margin-left:8px;">${esc(n.status)}</span>`;
+                    if (n.ips && n.ips.length > 0) {
+                        html += `<div style="color:#58a6ff;font-size:12px;margin-top:2px;">${n.ips.map(ip => esc(ip)).join(', ')}</div>`;
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+            // ── SIO info ──
+            if (Object.keys(sio).length > 0) {
+                html += '<div class="card"><h3>🔌 SIO/EC 控制器</h3><div class="grid-2">';
+                for (const [l, v] of [['产品', sio.product_id], ['固件', sio.firmware], ['事件数', sio.event_count]]) {
+                    if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+                }
+                html += '</div></div>';
+            }
+            // ── File list ──
+            const files = data.text_files || {};
+            html += `<div class="card"><h3>📁 诊断文件 (${data.text_file_count || 0} 个 + ${data.evtx_count || 0} 个 evtx)</h3><div class="file-list">`;
+            for (const [name, info] of Object.entries(files)) {
+                const kb = info.size ? (info.size/1024).toFixed(1) : 0;
+                html += `<span class="file-chip" style="cursor:pointer" onclick="document.querySelector('.tree-file.clickable')?.click()">${esc(name)} (${kb}KB)</span>`;
+            }
+            html += '</div></div>';
+            el.innerHTML = html || '<div class="alert alert-info">无数据</div>';
+        }
+        function renderDiagnostics(data) {
+            const el = document.getElementById('tab-content');
+            let html = '';
+            // ═══ Severity Banner ═══
+            const icons = {critical:'🔴', warning:'🟡', ok:'🟢', normal:'🔵'};
+            const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320', normal:'#0d2b4e'};
+            const sevBorder = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#1f6feb'};
+            const sevColor = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#58a6ff'};
+            const s = data.severity || 'normal';
+            // ═══ Stats Row ═══
+            html += '<div class="grid-2" style="margin-bottom:16px;">';
+            const stats = [
+                ['💾 蓝屏', data.bugcheck_count || 0, (data.bugcheck_count>0?'#f85149':'#3fb950')],
+                ['⚡ 意外断电', data.unexpected_shutdowns_count || 0, (data.unexpected_shutdowns_count>0?'#f85149':'#3fb950')],
+                ['🔧 硬件告警', data.hardware_error_count || 0, (data.hardware_error_count>0?'#d29922':'#3fb950')],
+                ['📝 LiveKernelEvent', data.lke_count || 0, (data.lke_count>0?'#d29922':'#8b949e')],
+                ['⚠️ 安装后崩溃', data.correlated_count || 0, (data.correlated_count>0?'#f85149':'#3fb950')],
+                ['📊 System 事件', data.syst_total || 0, '#58a6ff'],
+            ];
+            for (const [l, n, c] of stats) {
+                html += `<div class="stat-box"><div class="number" style="color:${c};font-size:24px;">${n}</div><div class="label">${l}</div></div>`;
+            }
+            html += '</div>';
+            // ═══ Section 1: BugCheck / Blue Screen ═══
+            const bugchecks = data.bugchecks || [];
+            if (bugchecks.length > 0) {
+                html += `<div class="card" style="border-left:3px solid #f85149;"><h3>💾 BugCheck 蓝屏事件 (${bugchecks.length} 次)</h3>`;
+                html += '<table><thead><tr><th>时间</th><th>代码</th><th>名称</th><th>参数</th></tr></thead><tbody>';
+                for (const bc of bugchecks.slice(0, 30)) {
+                    const bi = bc.bugcheck || {};
+                    html += `<tr>
+                        <td style="font-family:monospace;font-size:12px;">${fmtTime(bc.time)}</td>
+                        <td><span class="badge badge-critical">${escHtml(bi.code || '?')}</span></td>
+                        <td style="font-size:13px;"><strong>${escHtml(bi.name || '?')}</strong></td>
+                        <td style="font-family:monospace;font-size:11px;color:#8b949e;">${bc.param1 || ''}</td>
+                    </tr>`;
+                    html += `<tr><td></td><td colspan="3" style="color:#d29922;font-size:12px;padding-top:0;">📖 ${escHtml(bi.description || '')}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            // ═══ Section 2: Unexpected Shutdown Timeline ═══
+            const shutdowns = data.shutdowns || [];
+            if (shutdowns.length > 0) {
+                html += `<div class="card"><h3>⚡ 意外关机/断电事件 (${shutdowns.length} 次)</h3>`;
+                html += '<div class="event-list">';
+                for (const ev of shutdowns.slice(0, 50)) {
+                    const cls = ev.id === 41 ? 'color:#f85149;font-weight:bold;' : 'color:#d29922;';
+                    html += `<div class="event-item" style="${cls}">
+                        <strong>Event ${ev.id}</strong> | ${fmtTime(ev.time)} | ${escHtml(ev.source||'')} | ${escHtml(ev.description||'')}
+                    </div>`;
+                }
+                html += '</div></div>';
+            }
+            // ═══ Section 3: Crash-Install Correlation ═══
+            const correlated = data.correlated || [];
+            if (correlated.length > 0) {
+                html += `<div class="card" style="border-left:3px solid #d29922;"><h3>⚠️ 安装/服务变更后发生崩溃 — 关联分析</h3>`;
+                html += `<p style="color:#8b949e;font-size:13px;margin-bottom:12px;">以下事件显示在崩溃/断电前 10 分钟内有服务安装或更新记录（Event 7045 / 19）</p>`;
+                for (const item of correlated) {
+                    const crash = item.crash;
+                    html += `<div style="background:#0d1117;border-radius:6px;padding:12px;margin-bottom:8px;">`;
+                    html += `<div style="margin-bottom:8px;"><span class="badge badge-critical">崩溃</span> <strong>Event ${crash.id}</strong> | ${fmtTime(crash.time)} | ${escHtml(crash.description||'')}`;
+                    if (crash.service_name) html += ` — ${escHtml(crash.service_name)}`;
+                    html += '</div>';
+                    html += '<div style="font-size:12px;color:#8b949e;">⬆️ 崩溃前发生：</div>';
+                    for (const inst of (item.preceding_installs || [])) {
+                        html += `<div style="font-size:12px;padding:4px 0 4px 16px;font-family:monospace;">
+                            <span class="badge badge-warning" style="font-size:10px;">${escHtml(inst.source||'')}</span>
+                            Event ${inst.id} | ${fmtTime(inst.time)} | ${escHtml(inst.service_name || inst.description || inst.update_kb || '')}
+                        </div>`;
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+            // ═══ Section 4: Hardware Warnings ═══
+            const hwErrs = data.hardware_errors || [];
+            if (hwErrs.length > 0) {
+                // Group by type
+                const grouped = {};
+                for (const e of hwErrs) {
+                    const key = `Event ${e.id} — ${e.description||''}`;
+                    if (!grouped[key]) grouped[key] = [];
+                    if (grouped[key].length < 10) grouped[key].push(e);
+                }
+                html += `<div class="card"><h3>🔧 硬件告警详情 (${hwErrs.length} 条，${Object.keys(grouped).length} 种类型)</h3>`;
+                for (const [grp, evts] of Object.entries(grouped)) {
+                    const cls = evts[0].level <= 2 ? 'badge-critical' : 'badge-warning';
+                    html += `<div style="margin-bottom:12px;">
+                        <h4 style="font-size:14px;color:#c9d1d9;margin-bottom:6px;">${grp} <span class="badge ${cls}" style="font-size:11px;">${evts.length} 条</span></h4>`;
+                    html += '<div style="font-size:12px;color:#8b949e;padding-left:12px;">';
+                    for (const evt of evts.slice(0, 5)) {
+                        html += `<div style="padding:2px 0;"><span style="font-family:monospace;color:#484f58;">${fmtTime(evt.time)}</span>
+                            ${(evt.details||[]).slice(0,2).map(d => `<code style="color:#c9d1d9;font-size:11px;">${escHtml(d.substring(0,80))}</code>`).join(' | ')}
+                        </div>`;
+                    }
+                    if (evts.length > 5) html += `<div style="color:#484f58;">… 还有 ${evts.length - 5} 条</div>`;
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+            // ═══ Section 5: LiveKernelEvent ═══
+            const lke = data.lke_events || [];
+            if (lke.length > 0) {
+                html += `<div class="card"><h3>📝 LiveKernelEvent 内核硬件事件 (${lke.length} 个)</h3>`;
+                html += '<table><thead><tr><th>代码</th><th>描述</th><th>时间</th></tr></thead><tbody>';
+                for (const e of lke) {
+                    html += `<tr><td><span class="badge badge-warning">${e.code}</span></td><td>${escHtml(e.description)}</td><td style="font-family:monospace">${fmtTime(e.time)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            // ═══ Section 6: System.evtx Event Distribution ═══
+            const systDist = data.syst_dist || {};
+            if (Object.keys(systDist).length > 0) {
+                html += `<div class="card"><h3>📊 System.evtx 事件分布 (${data.syst_total} 条记录，Top 20)</h3>`;
+                html += '<table><thead><tr><th>Event ID</th><th>次数</th><th>类型</th></tr></thead><tbody>';
+                for (const [eid, cnt] of Object.entries(systDist).slice(0, 20)) {
+                    // Color code based on severity implication
+                    const kw = ['41','1001','6008'].includes(eid) ? 'badge-critical' :
+                               ['7','11','51','55','137','153','219'].includes(eid) ? 'badge-warning' : 'badge-info';
+                    html += `<tr><td><span class="badge ${kw}">${eid}</span></td><td>${cnt}</td><td style="font-size:12px;color:#8b949e;">—</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            // ═══ Section 7: Application.evtx Event Distribution ═══
+            const appDist = data.app_dist || {};
+            if (Object.keys(appDist).length > 0) {
+                html += `<div class="card"><h3>📊 Application.evtx 事件分布 (${data.app_total} 条记录，Top 20)</h3>`;
+                html += '<table><thead><tr><th>Event ID</th><th>次数</th></tr></thead><tbody>';
+                for (const [eid, cnt] of Object.entries(appDist).slice(0, 20)) {
+                    html += `<tr><td><span class="badge badge-info">${eid}</span></td><td>${cnt}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            // ═══ Section 8: Full Restart Timeline ═══
+            const allRestart = data.restart_events || [];
+            if (allRestart.length > 0) {
+                html += `<div class="card"><h3>🕐 完整重启/关机时间线 (最近 ${Math.min(allRestart.length, 150)} 条)</h3>`;
+                html += `<p style="color:#8b949e;font-size:12px;margin-bottom:8px;">
+                    按 Microsoft 诊断标准追踪 Event 12/13/19/41/1001/1074/6005/6008/6009/7045</p>`;
+                html += '<div class="event-list">';
+                for (const ev of allRestart.slice(0, 150)) {
+                    let style = '';
+                    if (ev.id === 41 || ev.id === 1001) style = 'color:#f85149;font-weight:bold;';
+                    else if (ev.id === 6008) style = 'color:#d29922;';
+                    else if (ev.id === 1074) style = 'color:#58a6ff;';
+                    else if (ev.id === 7045 || ev.id === 19) style = 'color:#d29922;';
+                    html += `<div class="event-item" style="${style}">
+                        <strong>Event ${ev.id}</strong> | ${fmtTime(ev.time)} | ${escHtml(ev.source||'')} | ${escHtml(ev.description||'')}
+                        ${ev.process ? ' — 进程: ' + escHtml(ev.process) : ''}
+                        ${ev.service_name ? ' — ' + escHtml(ev.service_name) : ''}
+                        ${ev.update_kb ? ' — ' + escHtml(ev.update_kb) : ''}
+                    </div>`;
+                }
+                if (allRestart.length > 150) html += `<div class="event-item" style="color:#484f58;">… 还有 ${allRestart.length - 150} 条</div>`;
+                html += '</div></div>';
+            }
+            if (!html) html = '<div class="alert alert-ok">✅ 未发现异常事件</div>';
+            el.innerHTML = html;
+        }
+        function renderDump(data) {
+            const el = document.getElementById('tab-content');
+            const dumps = data.dumps || {};
+            if (Object.keys(dumps).length === 0) {
+                el.innerHTML = `<div class="alert alert-info">📭 ${data.message || '未包含 Dump 文件'}</div>`;
+                return;
+            }
+            let html = '';
+            const unique = data.unique_bugchecks || [];
+            if (unique.length > 0) {
+                html += '<div class="card"><h3>🔍 蓝屏概览</h3>';
+                html += `<p style="color:#8b949e;font-size:14px;margin-bottom:12px;">${data.summary || ''}</p>`;
+                for (const bc of unique) {
+                    html += `<div class="alert alert-critical" style="margin-bottom:8px;">`;
+                    html += `<strong>${bc.code}</strong> — ${esc(bc.name)}`;
+                    html += `<p style="font-size:13px;margin-top:4px;opacity:0.9;">${esc(bc.description)}</p>`;
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+            html += `<div class="card"><h3>💾 转储文件详情 (${Object.keys(dumps).length} 个)</h3>`;
+            for (const [name, info] of Object.entries(dumps)) {
+                const typeColor = (info.dump_type||'').includes('完整') ? '#d29922' : '#58a6ff';
+                html += `<div style="background:#0d1117;padding:16px;border-radius:8px;margin-bottom:12px;border-left:3px solid ${typeColor};">`;
+                html += `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">`;
+                html += `<strong style="font-size:15px;">📁 ${esc(name)}</strong>`;
+                html += `<span style="font-size:12px;color:#8b949e;">${(info.size_mb||0).toFixed(1)} MB</span>`;
+                html += `</div>`;
+                html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">📋 类型：<span style="color:${typeColor}">${esc(info.dump_type || '未知')}</span>`;
+                if (info.mtime) html += ` &nbsp;|&nbsp; 🕐 ${esc(info.mtime)}`;
+                html += '</p>';
+                if (info.bugcheck) {
+                    const bc = info.bugcheck;
+                    html += `<div style="background:#1a121d;border:1px solid #3d1e00;border-radius:6px;padding:10px;margin-top:8px;">`;
+                    html += `<strong style="color:#f85149;">🔴 Bug Check: ${bc.code}</strong>`;
+                    html += `<span style="color:#c9d1d9;margin-left:8px;">${esc(bc.name)}</span>`;
+                    html += `<p style="color:#d29922;font-size:13px;margin-top:4px;">📖 ${esc(bc.description)}</p>`;
+                    if (info.bugcheck_params && info.bugcheck_params.length > 0) {
+                        html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">参数: <code style="color:#c9d1d9">${info.bugcheck_params.join(', ')}</code></p>`;
+                    }
+                    html += '</div>';
+                }
+                if (info.drivers && info.drivers.length > 0) {
+                    html += `<p style="font-size:12px;color:#8b949e;margin-top:6px;">📦 已加载驱动: `;
+                    html += info.drivers.slice(0, 12).map(d => `<code style="color:#c9d1d9;font-size:11px;">${esc(d)}</code>`).join(', ');
+                    html += '</p>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+            el.innerHTML = html;
+        }
+        function renderSiolog(data) {
+            const el = document.getElementById('tab-content');
+            if (!data.found) {
+                el.innerHTML = `<div class="alert alert-info">📭 ${data.message || '未找到 SIO_Events.log'}</div>`;
+                return;
+            }
+            let html = `<div class="card"><h3>📋 Lenovo SIO/EC 事件日志</h3>`;
+            const hdr = data.header || {};
+            html += '<div class="grid-2">';
+            for (const [k, v] of Object.entries(hdr)) {
+                const label = {product_id:'产品ID', firmware_version:'固件版本', event_count:'事件总数', last_event_id:'最后事件ID', mtm:'机型', serial:'序列号', util_version:'工具版本'}[k] || k;
+                html += `<div class="stat-box"><div class="number" style="font-size:16px;">${esc(v||'?')}</div><div class="label">${label}</div></div>`;
+            }
+            html += '</div></div>';
+            // Issues
+            const issues = data.issue_events || [];
+            if (issues.length > 0) {
+                html += `<div class="card"><h3>⚠️ 异常事件 (${issues.length} 个)</h3><table><thead><tr><th>#</th><th>时间</th><th>代码</th><th>数据</th></tr></thead><tbody>`;
+                for (const e of issues) {
+                    html += `<tr><td>${e.index}</td><td style="font-family:monospace">${e.time}</td><td><span class="badge badge-warning">${e.code}</span></td><td style="font-family:monospace;font-size:11px;">${esc(e.data)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            // All events summary
+            html += `<div class="card"><h3>📊 事件统计</h3>`;
+            html += `<p style="color:#8b949e;">${data.summary || ''}</p>`;
+            html += `<p style="font-size:13px;margin-top:8px;">启动记录: <strong>${data.boot_count}</strong> 次 | 事件代码类型: ${(data.unique_codes||[]).map(c => `<span class="badge badge-info" style="margin:2px;">${c}</span>`).join(' ')}</p>`;
+            html += '</div>';
+            // Timeline
+            const all = data.all_events || [];
+            if (all.length > 0) {
+                html += `<div class="card"><h3>🕐 事件时间线 (最近 ${all.length} 条)</h3><div class="event-list">`;
+                for (const e of all.reverse()) {
+                    const cls = e.code !== 'N000' ? 'color:#d29922;' : '';
+                    html += `<div class="event-item" style="${cls}"><strong>#${e.index}</strong> | ${e.time} | <strong>${e.code}</strong> | ${esc(e.data)}</div>`;
+                }
+                html += '</div></div>';
+            }
+            el.innerHTML = html;
+        }
+        // Initial load: show file tree, wait for user to click a tab
+        document.getElementById('loading').innerHTML = `
+            <div style="text-align:center;padding:60px 20px;">
+                <div style="font-size:64px;margin-bottom:16px;">🔬</div>
+                <h2 style="color:#f0f6fc;font-size:20px;margin-bottom:8px;">文件已就绪</h2>
+                <p style="color:#8b949e;font-size:14px;">点击上方标签开始诊断分析</p>
+            </div>`;
+        function fmtTime(ts) {
+            if (!ts) return '-';
+            try { return new Date(ts).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}); }
+            catch { return ts; }
+        }
+        function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+        function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        // File preview modal
+        async function openFile(filePath, fileName) {
+            const modal = document.getElementById('file-modal');
+            document.getElementById('modal-title').textContent = '📄 ' + fileName;
+            document.getElementById('modal-meta').textContent = '加载中...';
+            document.getElementById('modal-content').textContent = '加载中...';
+            modal.classList.add('open');
+            try {
+                const resp = await fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(filePath));
+                const data = await resp.json();
+                if (data.error) {
+                    document.getElementById('modal-content').textContent = '❌ ' + data.error;
+                    document.getElementById('modal-meta').textContent = '';
+                } else {
+                    document.getElementById('modal-meta').textContent =
+                        (data.size/1024).toFixed(1) + ' KB | 编码: ' + (data.encoding || '?') + ' | ' + filePath;
+                    document.getElementById('modal-content').textContent = data.content;
+                }
+            } catch (err) {
+                document.getElementById('modal-content').textContent = '❌ 加载失败: ' + err.message;
+            }
+        }
+        function closeFileModal() {
+            document.getElementById('file-modal').classList.remove('open');
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFileModal(); });
+        // Dump file detail viewer
+        async function openDumpDetail(filePath, fileName) {
+            const modal = document.getElementById('file-modal');
+            document.getElementById('modal-title').textContent = '💾 ' + fileName;
+            document.getElementById('modal-meta').textContent = '解析中...';
+            document.getElementById('modal-content').textContent = '解析中...';
+            modal.classList.add('open');
+            try {
+                const resp = await fetch('../api/dump-detail/' + jobId + '?file=' + encodeURIComponent(filePath));
+                const info = await resp.json();
+                if (info.error) {
+                    document.getElementById('modal-content').textContent = '❌ ' + info.error;
+                    document.getElementById('modal-meta').textContent = '';
+                    return;
+                }
+                // Render dump info in modal
+                let meta = (info.size_mb||0).toFixed(1) + ' MB | ' + (info.dump_type || '?');
+                if (info.mtime) meta += ' | ' + info.mtime;
+                document.getElementById('modal-meta').textContent = meta;
+                let html = '';
+                if (info.bugcheck) {
+                    html += '<div style="background:#1a121d;border:1px solid #3d1e00;border-radius:6px;padding:12px;margin-bottom:12px;">';
+                    html += `<strong style="color:#f85149;font-size:18px;">🔴 Bug Check: ${escHtml(info.bugcheck.code)}</strong>`;
+                    html += `<div style="color:#c9d1d9;font-size:15px;margin-top:4px;">${escHtml(info.bugcheck.name)}</div>`;
+                    html += `<p style="color:#d29922;font-size:13px;margin-top:6px;">📖 ${escHtml(info.bugcheck.description)}</p>`;
+                    if (info.bugcheck_params && info.bugcheck_params.length > 0) {
+                        html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">参数: <code style="color:#c9d1d9">${info.bugcheck_params.map(escHtml).join(', ')}</code></p>`;
+                    }
+                    html += '</div>';
+                }
+                if (info.drivers && info.drivers.length > 0) {
+                    html += '<div style="margin-top:8px;"><strong style="color:#8b949e;">📦 已加载驱动 (' + info.driver_count + ' 个)</strong>';
+                    html += '<div style="font-size:12px;color:#c9d1d9;margin-top:4px;line-height:1.8;">';
+                    html += info.drivers.map(d => `<code style="background:#21262d;padding:2px 6px;border-radius:4px;margin:2px;">${escHtml(d)}</code>`).join(' ');
+                    html += '</div></div>';
+                }
+                if (info.parse_error) {
+                    html += `<p style="color:#d29922;font-size:12px;margin-top:8px;">⚠️ ${escHtml(info.parse_error)}</p>`;
+                }
+                if (!html) html = '<p style="color:#8b949e;">无法提取更多信息（文件可能损坏或为空）</p>';
+                document.getElementById('modal-content').innerHTML = '<div style="font-family: -apple-system, sans-serif;">' + html + '</div>';
+            } catch (err) {
+                document.getElementById('modal-content').textContent = '❌ 加载失败: ' + err.message;
+            }
+        }
+        function escHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+        // ═══ Linux Renderers ═══
+        function renderLinuxOverview(data) {
+            const el = document.getElementById('tab-content');
+            const os = data.os_info || {};
+            let html = '<div class="card"><h3>🖥️ 系统信息</h3><div class="grid-2">';
+            const rows = [['系统', os.pretty_name || os.name], ['内核', os.kernel], ['主机名', os.hostname], ['运行时间', os.uptime]];
+            for (const [l, v] of rows) if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+            html += '</div></div>';
+            if (data.cpu) html += `<div class="card"><h3>🔲 处理器</h3><p><strong>${esc(data.cpu)}</strong> × ${data.cpu_cores || '?'} 核</p></div>`;
+            const mem = data.memory || {};
+            if (Object.keys(mem).length > 0) {
+                html += '<div class="card"><h3>💾 内存</h3><div class="grid-2">';
+                for (const [l, v] of Object.entries(mem)) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+                html += '</div></div>';
+            }
+            html += `<div class="card"><h3>📁 日志文件 (${data.file_count || 0} 个)</h3><div class="file-list">`;
+            for (const [name, info] of Object.entries(data.files || {}).slice(0, 30))
+                html += `<span class="file-chip">${esc(name)} (${info.kb}KB)</span>`;
+            html += '</div></div>';
+            el.innerHTML = html;
+        }
+        function renderLinuxKernel(data) {
+            const el = document.getElementById('tab-content');
+            const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320'};
+            const sevBd = {critical:'#f85149', warning:'#d29922', ok:'#3fb950'};
+            let html = `<div class="alert" style="background:${sevBg[data.severity]};border:2px solid ${sevBd[data.severity]}">`;
+            html += `<h3>🔧 ${data.title}</h3><p style="color:#8b949e;font-size:13px;">${data.summary || ''}</p></div>`;
+            html += '<div class="grid-2" style="margin-bottom:16px;">';
+            for (const [l, n, c] of [['OOM Killer', data.oom_count||0, '#f85149'], ['Kernel Panic', data.panic_count||0, '#f85149'], ['硬件错误', data.hw_error_count||0, '#d29922'], ['段错误', data.segfault_count||0, '#d29922']])
+                html += `<div class="stat-box"><div class="number" style="color:${c};font-size:24px;">${n}</div><div class="label">${l}</div></div>`;
+            html += '</div>';
+            if (data.findings && data.findings.length) {
+                html += '<div class="card"><h3>⚠️ 发现</h3><ul>';
+                for (const f of data.findings) html += `<li style="padding:6px 0;">${esc(f)}</li>`;
+                html += '</ul></div>';
+            }
+            if (data.timeline && data.timeline.length) {
+                html += '<div class="card"><h3>📅 关键事件时间线</h3><div class="event-list">';
+                for (const e of data.timeline.slice(0, 50)) html += `<div class="event-item" style="font-size:11px;">${esc(e)}</div>`;
+                html += '</div></div>';
+            }
+            el.innerHTML = html;
+        }
+        function renderLinuxSyslog(data) {
+            const el = document.getElementById('tab-content');
+            let html = '<div class="grid-2" style="margin-bottom:16px;">';
+            const s = data.stats || {};
+            for (const [l, n] of [['服务失败', s.service_failures], ['认证失败', s.auth_failures], ['磁盘错误', s.disk_errors], ['网络错误', s.network_errors]])
+                html += `<div class="stat-box"><div class="number" style="color:#58a6ff;font-size:24px;">${n||0}</div><div class="label">${l}</div></div>`;
+            html += '</div>';
+            if (data.findings && data.findings.length) {
+                html += '<div class="card"><h3>⚠️ 发现</h3><ul>';
+                for (const f of data.findings) html += `<li style="padding:6px 0;">${esc(f)}</li>`;
+                html += '</ul></div>';
+            }
+            el.innerHTML = html || '<div class="alert alert-info">无数据</div>';
+        }
+        function renderLinuxSummary(data) {
+            const el = document.getElementById('tab-content');
+            const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320'};
+            const sevBd = {critical:'#f85149', warning:'#d29922', ok:'#3fb950'};
+            const icons = {critical:'🔴', warning:'🟡', ok:'🟢'};
+            let html = `<div class="alert" style="background:${sevBg[data.severity]};border:2px solid ${sevBd[data.severity]};color:${sevBd[data.severity]}">`;
+            html += `<h3>${icons[data.severity]||'🔵'} ${data.title}</h3><ul style="list-style:none;padding:0;">`;
+            for (const f of data.findings||[]) html += `<li style="padding:6px 0;font-size:15px;">${f}</li>`;
+            html += '</ul></div>';
+            html += '<div class="grid-2">';
+            for (const [k, v] of Object.entries(data.detail||{}))
+                html += `<div class="card" style="cursor:pointer" onclick="document.querySelector('.tab[data-type=\\'${k}\\']').click()"><h3>${v.title||k}</h3><p style="color:#8b949e;">${v.summary||'点击查看详情 →'}</p></div>`;
+            html += '</div>';
+            el.innerHTML = html;
+        }
+        // ═══ Chat functions ═══
+        function renderChat() {
+            document.getElementById('page-title').textContent = '🤖 AI 分析对话';
+            const el = document.getElementById('tab-content');
+            el.innerHTML = `
+                <div class="chat-container">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="chat-msg assistant" style="font-size:14px;">
+                            <p>👋 你好！我是诊断助手，可以帮你分析这个日志包。</p>
+                            <p style="color:#8b949e;font-size:12px;margin-top:4px;">试试问我：<br>
+                            • 这台机器有什么严重问题？<br>
+                            • 频繁意外断电的原因？<br>
+                            • 帮我看看硬盘健康状态<br>
+                            • 蓝屏 dump 详细分析</p>
+                        </div>
+                    </div>
+                    <div class="chat-input-wrap">
+                        <input class="chat-input" id="chat-input" placeholder="输入你的问题..." onkeydown="onChatKey(event)">
+                        <button class="chat-send" id="chat-send-btn" onclick="chatSend()">发送</button>
+                    </div>
+                </div>`;
+            document.getElementById('chat-input').focus();
+        }
+        function onChatKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                chatSend();
+            }
+        }
+        async function chatSend() {
+            const inp = document.getElementById('chat-input');
+            const btn = document.getElementById('chat-send-btn');
+            const msg = inp.value.trim();
+            if (!msg) return;
+            inp.value = '';
+            inp.disabled = btn.disabled = true;
+            appendMessage('user', msg);
+            appendTyping();
+            try {
+                const resp = await fetch('../api/chat/' + jobId, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                removeTyping();
+                const data = await resp.json();
+                if (data.error) {
+                    appendMessage('assistant', '❌ ' + data.error);
+                } else {
+                    appendMessage('assistant', data.reply);
+                }
+            } catch (err) {
+                removeTyping();
+                appendMessage('assistant', '❌ 网络错误: ' + err.message);
+            }
+            inp.disabled = btn.disabled = false;
+            inp.focus();
+        }
+        function appendMessage(role, content) {
+            const msgs = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = 'chat-msg ' + role;
+            let html = content
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n- /g, '\n• ')
+                .replace(/\n\d+\. /g, (m) => '\n' + m.trim() + ' ')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+            html = '<p>' + html + '</p>';
+            div.innerHTML = html;
+            msgs.appendChild(div);
+            msgs.scrollTop = msgs.scrollHeight;
+        }
+        let typingEl = null;
+        function appendTyping() {
+            typingEl = document.createElement('div');
+            typingEl.className = 'chat-typing';
+            typingEl.textContent = '思考中...';
+            document.getElementById('chat-messages').appendChild(typingEl);
+            const msgs = document.getElementById('chat-messages');
+            msgs.scrollTop = msgs.scrollHeight;
+        }
+        function removeTyping() {
+            if (typingEl) { typingEl.remove(); typingEl = null; }
+        }
+        // ═══ BMC/Other layout functions ═══
+        function openFileInViewer(path, name) {
+            document.getElementById('other-viewer-title').textContent = '📄 ' + name;
+            document.getElementById('other-viewer-path').textContent = path;
+            var body = document.getElementById('other-viewer-body');
+            body.innerHTML = '<div style="text-align:center;color:#8b949e;padding:40px;"><div class="spinner"></div><p>加载中...</p></div>';
+            fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(path))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.error) {
+                        body.innerHTML = '<p style="color:#f85149;">' + esc(data.error) + '</p>';
+                    } else {
+                        var content = data.content || '';
+                        var isHtml = /\.(html|htm)$/i.test(name);
+                        if (isHtml) {
+                            body.innerHTML = '<iframe srcdoc="' + content.replace(/"/g, '&quot;') + '" style="width:100%;height:100%;min-height:400px;border:none;"></iframe>';
+                        } else {
+                            var escaped = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            body.innerHTML = '<pre>' + escaped + '</pre>';
+                        }
+                    }
+                })
+                .catch(function(err) {
+                    body.innerHTML = '<p style="color:#f85149;">加载失败: ' + err.message + '</p>';
+                });
+        }
+        function openDumpInViewer(path, name) {
+            document.getElementById('other-viewer-title').textContent = '💾 ' + name;
+            document.getElementById('other-viewer-path').textContent = path;
+            var body = document.getElementById('other-viewer-body');
+            body.innerHTML = '<div style="text-align:center;color:#8b949e;padding:40px;"><div class="spinner"></div><p>解析 Dump 中...</p></div>';
+            fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(path))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.error) {
+                        body.innerHTML = '<p style="color:#f85149;">' + esc(data.error) + '</p>';
+                    } else {
+                        body.innerHTML = '<pre>' + esc(data.content || '无数据') + '</pre>';
+                    }
+                })
+                .catch(function(err) {
+                    body.innerHTML = '<p style="color:#f85149;">加载失败: ' + err.message + '</p>';
+                });
+        }
+        // Chat for BMC/Other layout
+        if (isOtherLayout) {
+            document.getElementById('page-title').textContent = '🔬 文件分析平台';
+            var otherChatInput = document.getElementById('chat-input');
+            var otherChatSendBtn = document.getElementById('chat-send-btn');
+            var otherChatMsgs = document.getElementById('chat-messages');
+            otherChatInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    otherChatSend();
+                }
+            });
+            otherChatSendBtn.addEventListener('click', otherChatSend);
+            function otherChatSend() {
+                var msg = otherChatInput.value.trim();
+                if (!msg) return;
+                otherChatInput.value = '';
+                otherChatInput.disabled = true;
+                otherChatSendBtn.disabled = true;
+                appendOtherMsg('user', msg);
+                appendOtherTyping();
+                fetch('../api/chat/' + jobId, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    removeOtherTyping();
+                    if (data.error) {
+                        appendOtherMsg('assistant', '❌ ' + data.error);
+                    } else {
+                        appendOtherMsg('assistant', data.reply);
+                    }
+                })
+                .catch(function(err) {
+                    removeOtherTyping();
+                    appendOtherMsg('assistant', '❌ 网络错误: ' + err.message);
+                })
+                .finally(function() {
+                    otherChatInput.disabled = false;
+                    otherChatSendBtn.disabled = false;
+                    otherChatInput.focus();
+                });
+            }
+            function appendOtherMsg(role, content) {
+                var div = document.createElement('div');
+                div.className = 'chat-msg ' + role;
+                var html = content
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/```(\\w*)\\n?([\\s\\S]*?)```/g, '<pre><code>$2</code></pre>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>')
+                    .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+                    .replace(/\\n\\n/g, '</p><p>')
+                    .replace(/\\n/g, '<br>');
+                html = '<p>' + html + '</p>';
+                div.innerHTML = html;
+                otherChatMsgs.appendChild(div);
+                otherChatMsgs.scrollTop = otherChatMsgs.scrollHeight;
+            }
+            var otherTypingEl = null;
+            function appendOtherTyping() {
+                otherTypingEl = document.createElement('div');
+                otherTypingEl.className = 'chat-typing';
+                otherTypingEl.textContent = '分析中...';
+                otherChatMsgs.appendChild(otherTypingEl);
+                otherChatMsgs.scrollTop = otherChatMsgs.scrollHeight;
+            }
+            function removeOtherTyping() {
+                if (otherTypingEl) { otherTypingEl.remove(); otherTypingEl = null; }
+            }
+        }
+    </script>
+</body>
+</html>

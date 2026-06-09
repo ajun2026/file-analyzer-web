@@ -1,19 +1,16 @@
-# 敏感配置
-config.php
-api/config.php
+# Sensitive
+.env
+__pycache__/
+*.pyc
 
-# 上传数据
+# User data (excluded from repo)
 uploads/
+reports/
 
-# 缓存
-**/_meta.json
-
-# 备份
-*.bak*
-
-# 系统
-.DS_Store
-Thumbs.db
+# IDE
 .vscode/
 .idea/
-*.swp
+
+# OS
+.DS_Store
+Thumbs.db

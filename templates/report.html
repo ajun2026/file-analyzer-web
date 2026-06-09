@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析报告</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.6; }
+        .header { background: #161b22; border-bottom: 1px solid #21262d; padding: 16px 24px; position: sticky; top: 0; z-index: 10; }
+        .header h1 { font-size: 20px; color: #f0f6fc; }
+        .content { max-width: 1100px; margin: 0 auto; padding: 24px; }
+        .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .card h3 { font-size: 16px; color: #f0f6fc; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+        .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #21262d36; }
+        .info-row .label { color: #8b949e; }
+        .info-row .value { color: #c9d1d9; font-weight: 500; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
+        th { color: #8b949e; font-weight: 600; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-critical { background: #490202; color: #f85149; }
+        .badge-error { background: #3d1e00; color: #d29922; }
+        .badge-info { background: #0d2b4e; color: #58a6ff; }
+        .badge-ok { background: #0d3320; color: #3fb950; }
+        .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+        .alert-critical { background: #490202; border: 1px solid #f85149; color: #f85149; }
+        .alert-warning { background: #3d1e00; border: 1px solid #d29922; color: #d29922; }
+        .alert-info { background: #0d2b4e; border: 1px solid #58a6ff; color: #58a6ff; }
+        .event-list { max-height: 500px; overflow-y: auto; }
+        .event-item { padding: 8px 12px; border-bottom: 1px solid #21262d36; font-size: 13px; font-family: "SF Mono", "Fira Code", monospace; }
+        .loading { text-align: center; padding: 60px; color: #8b949e; }
+        .loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #21262d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .stat-box { text-align: center; padding: 16px; background: #0d1117; border-radius: 8px; }
+        .stat-box .number { font-size: 32px; font-weight: 700; color: #f0f6fc; }
+        .stat-box .label { font-size: 13px; color: #8b949e; margin-top: 4px; }
+        .file-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .file-chip { background: #21262d; padding: 4px 12px; border-radius: 14px; font-size: 12px; color: #8b949e; }
+        .type-tab {
+            padding: 6px 14px; border-radius: 16px; font-size: 13px;
+            background: #21262d; color: #8b949e; text-decoration: none;
+            border: 1px solid #30363d; transition: all 0.15s; cursor: pointer;
+        }
+        .type-tab:hover { border-color: #58a6ff; color: #c9d1d9; }
+        .type-tab.active { background: #0d2b4e; border-color: #1f6feb; color: #58a6ff; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div style="display:flex;align-items:center;gap:16px;">
+            <a href="../?job_id={{ job_id }}" style="color:#58a6ff;text-decoration:none;font-size:16px;">← 返回</a>
+            <h1 id="report-title" style="flex:1;">🔬 分析报告</h1>
+        </div>
+        <div id="type-tabs" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+            <a class="type-tab" data-type="overview" href="#">📊 系统概览</a>
+            <a class="type-tab" data-type="reboot" href="#">⚡ 重启分析</a>
+            <a class="type-tab" data-type="hardware" href="#">🔧 硬件诊断</a>
+            <a class="type-tab" data-type="events" href="#">📝 事件日志</a>
+            <a class="type-tab" data-type="dump" href="#">💾 Dump 分析</a>
+        </div>
+    </div>
+    <div class="content" id="content">
+        <div class="loading" id="loading"><div class="spinner"></div><p>加载中...</p></div>
+    </div>
+
+    <script>
+        const jobId = '{{ job_id }}';
+        const params = new URLSearchParams(window.location.search);
+        let type = params.get('type') || 'overview';
+
+        // Wire up type tabs
+        document.querySelectorAll('.type-tab').forEach(tab => {
+            if (tab.dataset.type === type) tab.classList.add('active');
+            tab.addEventListener('click', async function(e) {
+                e.preventDefault();
+                const newType = this.dataset.type;
+                type = newType;  // Update for render dispatch
+                // Show loading
+                document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><p>正在分析 ' + this.textContent.trim() + '...</p></div>';
+                // Highlight clicked tab
+                document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                // Trigger analysis
+                try {
+                    const resp = await fetch('../api/analyze/' + jobId + '?analysis_type=' + newType, { method: 'POST' });
+                    const data = await resp.json();
+                    if (data.status === 'started') {
+                        await pollAnalysis(jobId, newType);
+                    } else if (data.status === 'ready') {
+                        loadReport(newType);
+                    }
+                } catch (err) {
+                    document.getElementById('content').innerHTML = '<div class="alert alert-critical">分析失败: ' + err.message + '</div>';
+                }
+            });
+        });
+
+        async function pollAnalysis(jobId, type) {
+            for (let i = 0; i < 120; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const resp = await fetch('../api/status/' + jobId);
+                    const data = await resp.json();
+                    if (data.status === 'done') { loadReport(type); return; }
+                    if (data.status === 'error') {
+                        document.getElementById('content').innerHTML = '<div class="alert alert-critical">' + (data.error || '分析失败') + '</div>';
+                        return;
+                    }
+                } catch (e) { /* retry */ }
+            }
+            document.getElementById('content').innerHTML = '<div class="alert alert-warning">分析超时，请重试</div>';
+        }
+
+        function loadReport(type) {
+            document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><p>加载报告...</p></div>';
+            fetch('../api/report/' + jobId + '?type=' + type)
+                .then(r => r.json())
+                .then(render)
+                .catch(err => {
+                    document.getElementById('content').innerHTML = '<div class="alert alert-critical">加载失败: ' + err.message + '</div>';
+                });
+        }
+
+        // Initial load
+        loadReport(type);
+
+        function render(data) {
+            const el = document.getElementById('content');
+            document.getElementById('report-title').textContent = data.title || '分析报告';
+
+            switch(type) {
+                case 'overview': renderOverview(data); break;
+                case 'reboot': renderReboot(data); break;
+                case 'hardware': renderHardware(data); break;
+                case 'events': renderEvents(data); break;
+                case 'dump': renderDump(data); break;
+            }
+        }
+
+        function renderOverview(data) {
+            const el = document.getElementById('content');
+            let html = '';
+            const files = data.text_files || {};
+            html += `<div class="card"><h3>📦 诊断文件 (${Object.keys(files).length} 个)</h3><div class="file-list">`;
+            for (const [name, info] of Object.entries(files)) {
+                const kb = info.size ? (info.size/1024).toFixed(1) : 0;
+                html += `<span class="file-chip">${name} (${kb}KB)</span>`;
+            }
+            html += '</div></div>';
+
+            const keyFiles = ['Systeminfo.txt', 'dxdiag.txt', 'Tasklist.txt'];
+            for (const kf of keyFiles) {
+                if (files[kf] && files[kf].preview) {
+                    html += `<div class="card"><h3>📄 ${kf}</h3><pre style="white-space:pre-wrap;font-size:13px;max-height:400px;overflow-y:auto;background:#0d1117;padding:12px;border-radius:6px;">${esc(files[kf].preview)}</pre></div>`;
+                }
+            }
+            el.innerHTML = html;
+        }
+
+        function renderReboot(data) {
+            const el = document.getElementById('content');
+            let html = '';
+            const count = data.unexpected_shutdowns_count || 0;
+            if (count > 0) {
+                html += `<div class="alert alert-critical">⚠️ 发现 <strong>${count}</strong> 次意外断电 (Kernel-Power Event 41)！</div>`;
+            } else {
+                html += '<div class="alert alert-ok">✅ 未发现意外断电事件</div>';
+            }
+            html += `<p style="color:#8b949e;font-size:14px;margin-bottom:16px;">${data.summary || ''}</p>`;
+
+            html += '<div class="grid-2">';
+            html += `<div class="stat-box"><div class="number" style="color:${count>0?'#f85149':'#3fb950'}">${count}</div><div class="label">意外断电 (Event 41)</div></div>`;
+            html += `<div class="stat-box"><div class="number">${data.event_6008_count || 0}</div><div class="label">意外关机 (Event 6008)</div></div>`;
+            html += `<div class="stat-box"><div class="number">${data.all_reboot_events ? data.all_reboot_events.length : 0}</div><div class="label">重启相关事件</div></div>`;
+            html += '</div>';
+
+            const shutdowns = data.unexpected_shutdowns || [];
+            if (shutdowns.length > 0) {
+                html += '<div class="card"><h3>⚡ 意外断电时间线</h3><table><thead><tr><th>时间 (UTC+8)</th><th>事件</th><th>来源</th></tr></thead><tbody>';
+                for (const e of shutdowns) {
+                    html += `<tr><td style="font-family:monospace">${fmtTime(e.time)}</td><td><span class="badge badge-critical">Event ${e.id}</span> ${e.description||''}</td><td>${e.provider||''}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+
+            const all = (data.all_reboot_events || []).slice(-100).reverse();
+            if (all.length > 0) {
+                html += '<div class="card"><h3>📋 完整重启记录</h3><div class="event-list">';
+                for (const e of all) {
+                    const c = e.id === 41 ? 'color:#f85149;font-weight:bold' : e.id === 6008 ? 'color:#d29922' : '';
+                    html += `<div class="event-item" style="${c}"><strong>Event ${e.id}</strong> | ${fmtTime(e.time)} | ${e.provider||''} | ${e.description||''}</div>`;
+                }
+                html += '</div></div>';
+            }
+            el.innerHTML = html;
+        }
+
+        function renderHardware(data) {
+            const el = document.getElementById('content');
+            let html = '';
+            const lke = data.lke_events || [];
+            if (lke.length > 0) {
+                html += `<div class="card"><h3>🔧 内核硬件事件 (${lke.length} 个)</h3>`;
+                html += '<table><thead><tr><th>代码</th><th>描述</th><th>时间</th></tr></thead><tbody>';
+                for (const e of lke) {
+                    html += `<tr><td><span class="badge badge-warning">${e.code}</span></td><td>${e.description}</td><td style="font-family:monospace">${fmtTime(e.time)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            const extra = data.extra || {};
+            for (const [name, content] of Object.entries(extra)) {
+                html += `<div class="card"><h3>📄 ${name}</h3><pre style="white-space:pre-wrap;font-size:13px;max-height:300px;overflow-y:auto;background:#0d1117;padding:12px;border-radius:6px;">${esc(content)}</pre></div>`;
+            }
+            if (!html) html = '<div class="alert alert-info">未检测到异常硬件事件</div>';
+            el.innerHTML = html;
+        }
+
+        function renderEvents(data) {
+            const el = document.getElementById('content');
+            let html = `<div class="card"><h3>📊 事件日志总览 (${data.total_files || 0} 个文件`;
+            if (data.total_available && data.total_available > data.total_files) {
+                html += `，共 ${data.total_available} 个可用`;
+            }
+            html += ')</h3><div class="grid-2">';
+            const logs = data.logs || {};
+            for (const [name, ld] of Object.entries(logs)) {
+                html += `<div class="stat-box"><div class="number">${ld.total || 0}</div><div class="label">${name}</div></div>`;
+            }
+            html += '</div></div>';
+
+            for (const [name, ld] of Object.entries(logs)) {
+                const dist = ld.distribution || {};
+                const top = Object.entries(dist).slice(0, 15);
+                html += `<div class="card"><h3>📋 ${name} — 事件分布</h3><table><thead><tr><th>Event ID</th><th>次数</th></tr></thead><tbody>`;
+                for (const [eid, cnt] of top) {
+                    html += `<tr><td><span class="badge badge-info">${eid}</span></td><td>${cnt}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+
+                if (ld.errors && ld.errors.length > 0) {
+                    html += `<div class="card"><h3>⛔ ${name} — 错误事件</h3><div class="event-list">`;
+                    for (const err of ld.errors.slice(0, 30)) {
+                        const lb = err.level <= 1 ? 'badge-critical' : 'badge-error';
+                        html += `<div class="event-item"><span class="badge ${lb}">Event ${err.id}</span> | ${fmtTime(err.time)} | ${err.provider||''} | ${(err.data||[]).join('; ')}</div>`;
+                    }
+                    html += '</div></div>';
+                }
+            }
+            el.innerHTML = html;
+        }
+
+        function renderDump(data) {
+            const el = document.getElementById('content');
+            const dumps = data.dumps || {};
+            if (Object.keys(dumps).length === 0) {
+                el.innerHTML = `<div class="alert alert-info">📭 ${data.message || '未包含 Dump 文件'}</div>`;
+                return;
+            }
+
+            let html = '';
+
+            // Summary cards
+            const unique = data.unique_bugchecks || [];
+            if (unique.length > 0) {
+                html += '<div class="card"><h3>🔍 蓝屏概览</h3>';
+                html += `<p style="color:#8b949e;font-size:14px;margin-bottom:12px;">${data.summary || ''}</p>`;
+                for (const bc of unique) {
+                    html += `<div class="alert alert-critical" style="margin-bottom:8px;">`;
+                    html += `<strong>${bc.code}</strong> — ${esc(bc.name)}`;
+                    html += `<p style="font-size:13px;margin-top:4px;opacity:0.9;">${esc(bc.description)}</p>`;
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+
+            // Per-dump detail
+            html += `<div class="card"><h3>💾 转储文件详情 (${Object.keys(dumps).length} 个)</h3>`;
+            for (const [name, info] of Object.entries(dumps)) {
+                const typeColor = (info.dump_type||'').includes('完整') ? '#d29922' : '#58a6ff';
+                html += `<div style="background:#0d1117;padding:16px;border-radius:8px;margin-bottom:12px;border-left:3px solid ${typeColor};">`;
+                html += `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">`;
+                html += `<strong style="font-size:15px;">📁 ${esc(name)}</strong>`;
+                html += `<span style="font-size:12px;color:#8b949e;">${(info.size_mb||0).toFixed(1)} MB</span>`;
+                html += `</div>`;
+
+                // Dump type
+                html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">📋 类型：<span style="color:${typeColor}">${esc(info.dump_type || '未知')}</span>`;
+                if (info.mtime) html += ` &nbsp;|&nbsp; 🕐 ${esc(info.mtime)}`;
+                html += '</p>';
+
+                // Bug Check info
+                if (info.bugcheck) {
+                    const bc = info.bugcheck;
+                    html += `<div style="background:#1a121d;border:1px solid #3d1e00;border-radius:6px;padding:10px;margin-top:8px;">`;
+                    html += `<strong style="color:#f85149;">🔴 Bug Check: ${bc.code}</strong>`;
+                    html += `<span style="color:#c9d1d9;margin-left:8px;">${esc(bc.name)}</span>`;
+                    html += `<p style="color:#d29922;font-size:13px;margin-top:4px;">📖 ${esc(bc.description)}</p>`;
+
+                    if (info.bugcheck_params && info.bugcheck_params.length > 0) {
+                        html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">参数: <code style="color:#c9d1d9">${info.bugcheck_params.join(', ')}</code></p>`;
+                    }
+                    html += '</div>';
+                }
+
+                // Event 1001 cross-reference
+                if (info.event_1001) {
+                    const ev = info.event_1001;
+                    html += `<div style="background:#0d1f2b;border:1px solid #1f6feb33;border-radius:6px;padding:8px;margin-top:6px;">`;
+                    html += `<span style="font-size:12px;color:#58a6ff;">📋 事件日志匹配 — Event 1001</span>`;
+                    html += `<p style="font-size:12px;color:#8b949e;margin-top:2px;">时间: ${esc(ev.time)}`;
+                    if (ev.sleep_in_progress) html += ` &nbsp;|&nbsp; ⚠️ 睡眠中崩溃`;
+                    html += '</p>';
+                    if (ev.param1) html += `<p style="font-size:12px;color:#8b949e;">额外参数: ${esc(ev.param1)}, ${esc(ev.param2||'')}, ${esc(ev.param3||'')}, ${esc(ev.param4||'')}</p>`;
+                    html += '</div>';
+                }
+
+                // Drivers
+                if (info.drivers && info.drivers.length > 0) {
+                    html += `<p style="font-size:12px;color:#8b949e;margin-top:6px;">📦 已加载驱动 (${info.driver_count||info.drivers.length} 个): `;
+                    html += info.drivers.slice(0, 12).map(d => `<code style="color:#c9d1d9;font-size:11px;">${esc(d)}</code>`).join(', ');
+                    if (info.drivers.length > 12) html += ` ...`;
+                    html += '</p>';
+                }
+
+                if (info.parse_error) {
+                    html += `<p style="color:#d29922;font-size:11px;margin-top:4px;">⚠️ 解析提示: ${esc(info.parse_error)}</p>`;
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+
+            html += '<p style="color:#8b949e;font-size:12px;margin-top:8px;">💡 完整调用栈分析请使用 WinDbg (Windows). 蓝色侧边=Minidump, 橙色=完整转储</p>';
+            el.innerHTML = html;
+        }
+
+        function fmtTime(ts) {
+            if (!ts) return '-';
+            try { return new Date(ts).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}); }
+            catch { return ts; }
+        }
+        function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+    </script>
+</body>
+</html>
