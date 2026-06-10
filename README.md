@@ -238,6 +238,14 @@ systemctl enable --now log-analyzer
 - BMC/Other 新布局：文件浏览器 + AI 聊天下半区
 - AI 聊天分流：Win/Linux → FC 模式，BMC/Other → 上下文注入模式
 - 上下文注入：BMC 关键日志智能排序 + 1.5MB 上限
+- ThinkServer BMC (.tgz 非压缩) 自动检测 + AI 结构化 Markdown 回复
+
+### v3.2.2 (2026-06-10)
+- **修复**: `.tgz` 解压改为 `tar xf` 自动检测压缩（ThinkServer BMC 包可能是纯 tar）
+- **新增**: ThinkServer BMC 检测（`bmcos/` 目录 或 `log/err.log` + `log/oemsys.log`）
+- **优化**: BMC AI 回复 system prompt 增加 6 条格式规范（### 标题 / - 列表 / \` 代码标记）
+- **新增**: BMC 聊天区拖拽调整高度 + 完整 Markdown 渲染（标题/列表/引用/分隔线）
+- **修复**: BMC 发送按钮兜底（inline onclick + 全局函数 + try/catch 防御）
 
 ---
 

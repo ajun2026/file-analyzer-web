@@ -114,7 +114,11 @@
         .other-viewer-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap;
             word-break: break-all; color: #c9d1d9; line-height: 1.5; margin: 0; }
         .other-viewer-body iframe { width: 100%; height: 100%; border: none; }
-        .other-chat { height: 320px; display: flex; flex-direction: column; border-top: 1px solid #21262d; }
+        .other-chat { flex: 0 0 auto; min-height: 200px; height: 350px; display: flex; flex-direction: column;
+            border-top: 1px solid #21262d; resize: vertical; overflow: hidden; }
+        .other-chat .resize-handle { height: 6px; background: #21262d; cursor: row-resize;
+            flex-shrink: 0; transition: background 0.15s; }
+        .other-chat .resize-handle:hover { background: #58a6ff; }
         .other-chat .chat-container { display: flex; flex-direction: column; height: 100%; }
         .other-chat .chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; }
         .other-chat .chat-input-wrap { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #21262d; }
@@ -168,6 +172,7 @@
                     </div>
                 </div>
                 <div class="other-chat" id="other-chat">
+                    <div class="resize-handle" id="chat-resize-handle" title="拖动调整聊天区高度"></div>
                     <div class="chat-container" id="chat-container">
                         <div class="chat-messages" id="chat-messages">
                             <div style="text-align:center;color:#8b949e;padding:40px 20px;">
@@ -177,8 +182,10 @@
                             </div>
                         </div>
                         <div class="chat-input-wrap">
-                            <textarea class="chat-input" id="chat-input" rows="2" placeholder="输入问题，按 Enter 发送..."></textarea>
-                            <button class="chat-send" id="chat-send-btn">发送</button>
+                            <textarea class="chat-input" id="chat-input" rows="2"
+                                placeholder="输入问题，按 Enter 发送..."
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();otherChatSend();}"></textarea>
+                            <button class="chat-send" id="chat-send-btn" onclick="otherChatSend()">发送</button>
                         </div>
                     </div>
                 </div>
@@ -1025,76 +1032,169 @@
                     body.innerHTML = '<p style="color:#f85149;">加载失败: ' + err.message + '</p>';
                 });
         }
-        // Chat for BMC/Other layout
-        if (isOtherLayout) {
-            document.getElementById('page-title').textContent = '🔬 文件分析平台';
-            var otherChatInput = document.getElementById('chat-input');
-            var otherChatSendBtn = document.getElementById('chat-send-btn');
-            var otherChatMsgs = document.getElementById('chat-messages');
-            otherChatInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    otherChatSend();
-                }
+        // ═══ BMC/Other chat: global send function (accessible from inline handlers) ═══
+        function renderBmcMarkdown(text) {
+            // Escape HTML first
+            text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            // Protect code blocks: ```...``` → placeholder
+            var codeBlocks = [];
+            text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_, lang, code) {
+                codeBlocks.push('<pre><code>' + code.replace(/^\n|\n$/g, '') + '</code></pre>');
+                return '\x00CODE' + (codeBlocks.length - 1) + '\x00';
             });
-            otherChatSendBtn.addEventListener('click', otherChatSend);
-            function otherChatSend() {
-                var msg = otherChatInput.value.trim();
-                if (!msg) return;
-                otherChatInput.value = '';
-                otherChatInput.disabled = true;
-                otherChatSendBtn.disabled = true;
-                appendOtherMsg('user', msg);
-                appendOtherTyping();
-                fetch('../api/chat/' + jobId, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: msg})
-                })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    removeOtherTyping();
-                    if (data.error) {
-                        appendOtherMsg('assistant', '❌ ' + data.error);
-                    } else {
-                        appendOtherMsg('assistant', data.reply);
+            // Inline code: `text`
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // Bold: **text**
+            text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            // Split into paragraphs (double newline)
+            var paras = text.split(/\n\n+/);
+            var out = [];
+            for (var i = 0; i < paras.length; i++) {
+                var p = paras[i].trim();
+                if (!p) continue;
+                // Heading: ### text
+                if (/^###\s/.test(p)) {
+                    out.push('<h3>' + p.replace(/^###\s+/, '') + '</h3>');
+                } else if (/^##\s/.test(p)) {
+                    out.push('<h2>' + p.replace(/^##\s+/, '') + '</h2>');
+                } else if (/^#\s/.test(p)) {
+                    out.push('<h1>' + p.replace(/^#\s+/, '') + '</h1>');
+                } else if (/^---+\s*$/.test(p)) {
+                    out.push('<hr>');
+                } else {
+                    // Check for list items or blockquotes inside this paragraph
+                    var lines = p.split('\n');
+                    var html = '';
+                    var inUl = false, inOl = false, inBq = false;
+                    for (var j = 0; j < lines.length; j++) {
+                        var line = lines[j].trim();
+                        if (!line) { html += '<br>'; continue; }
+                        // Blockquote: > text
+                        if (/^>\s?/.test(line)) {
+                            if (!inBq) { html += '<blockquote>'; inBq = true; }
+                            html += line.replace(/^>\s?/, '') + '<br>';
+                            continue;
+                        } else if (inBq) { html += '</blockquote>'; inBq = false; }
+                        // Unordered list: - item or * item
+                        if (/^[-*]\s/.test(line)) {
+                            if (inOl) { html += '</ol>'; inOl = false; }
+                            if (!inUl) { html += '<ul>'; inUl = true; }
+                            html += '<li>' + line.replace(/^[-*]\s+/, '') + '</li>';
+                            continue;
+                        } else if (inUl) { html += '</ul>'; inUl = false; }
+                        // Ordered list: 1. item
+                        if (/^\d+\.\s/.test(line)) {
+                            if (inUl) { html += '</ul>'; inUl = false; }
+                            if (!inOl) { html += '<ol>'; inOl = true; }
+                            html += '<li>' + line.replace(/^\d+\.\s+/, '') + '</li>';
+                            continue;
+                        } else if (inOl) { html += '</ol>'; inOl = false; }
+                        // Regular text line
+                        html += line + '<br>';
                     }
-                })
-                .catch(function(err) {
-                    removeOtherTyping();
-                    appendOtherMsg('assistant', '❌ 网络错误: ' + err.message);
-                })
-                .finally(function() {
-                    otherChatInput.disabled = false;
-                    otherChatSendBtn.disabled = false;
-                    otherChatInput.focus();
-                });
+                    if (inUl) html += '</ul>';
+                    if (inOl) html += '</ol>';
+                    if (inBq) html += '</blockquote>';
+                    out.push('<p>' + html + '</p>');
+                }
             }
-            function appendOtherMsg(role, content) {
+            var result = out.join('');
+            // Restore code blocks
+            result = result.replace(/\x00CODE(\d+)\x00/g, function(_, idx) {
+                return codeBlocks[parseInt(idx)];
+            });
+            return result;
+        }
+        function otherChatSend() {
+            var inp = document.getElementById('chat-input');
+            var btn = document.getElementById('chat-send-btn');
+            var msgs = document.getElementById('chat-messages');
+            if (!inp || !btn || !msgs) { console.error('otherChatSend: elements not found'); return; }
+            var msg = inp.value.trim();
+            if (!msg) return;
+            inp.value = '';
+            inp.disabled = true;
+            btn.disabled = true;
+            // User bubble
+            (function() {
                 var div = document.createElement('div');
-                div.className = 'chat-msg ' + role;
-                var html = content
-                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                    .replace(/```(\\w*)\\n?([\\s\\S]*?)```/g, '<pre><code>$2</code></pre>')
-                    .replace(/`([^`]+)`/g, '<code>$1</code>')
-                    .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
-                    .replace(/\\n\\n/g, '</p><p>')
-                    .replace(/\\n/g, '<br>');
-                html = '<p>' + html + '</p>';
-                div.innerHTML = html;
-                otherChatMsgs.appendChild(div);
-                otherChatMsgs.scrollTop = otherChatMsgs.scrollHeight;
-            }
-            var otherTypingEl = null;
-            function appendOtherTyping() {
-                otherTypingEl = document.createElement('div');
-                otherTypingEl.className = 'chat-typing';
-                otherTypingEl.textContent = '分析中...';
-                otherChatMsgs.appendChild(otherTypingEl);
-                otherChatMsgs.scrollTop = otherChatMsgs.scrollHeight;
-            }
-            function removeOtherTyping() {
-                if (otherTypingEl) { otherTypingEl.remove(); otherTypingEl = null; }
+                div.className = 'chat-msg user';
+                div.textContent = msg;
+                msgs.appendChild(div);
+                msgs.scrollTop = msgs.scrollHeight;
+            })();
+            // Typing indicator
+            var typingEl = document.createElement('div');
+            typingEl.className = 'chat-typing';
+            typingEl.textContent = '分析中...';
+            msgs.appendChild(typingEl);
+            msgs.scrollTop = msgs.scrollHeight;
+            // Send to backend
+            fetch('../api/chat/' + jobId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: msg})
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (typingEl && typingEl.parentNode) typingEl.remove();
+                var div = document.createElement('div');
+                div.className = 'chat-msg assistant';
+                var content = data.error ? '❌ ' + data.error : (data.reply || '');
+                div.innerHTML = renderBmcMarkdown(content);
+                msgs.appendChild(div);
+                msgs.scrollTop = msgs.scrollHeight;
+            })
+            .catch(function(err) {
+                if (typingEl && typingEl.parentNode) typingEl.remove();
+                var div = document.createElement('div');
+                div.className = 'chat-msg assistant';
+                div.innerHTML = '<p>❌ 网络错误: ' + err.message + '</p>';
+                msgs.appendChild(div);
+                msgs.scrollTop = msgs.scrollHeight;
+            })
+            .finally(function() {
+                inp.disabled = false;
+                btn.disabled = false;
+                inp.focus();
+            });
+        }
+
+        // ═══ BMC/Other layout setup ═══
+        if (isOtherLayout) {
+            try {
+                document.getElementById('page-title').textContent = '🔬 文件分析平台';
+
+                // Resize handle: drag to adjust chat panel height
+                (function() {
+                    var handle = document.getElementById('chat-resize-handle');
+                    var chatPanel = document.getElementById('other-chat');
+                    if (!handle || !chatPanel) return;
+                    var startY, startHeight;
+                    handle.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                        startY = e.clientY;
+                        startHeight = chatPanel.offsetHeight;
+                        document.addEventListener('mousemove', onDrag);
+                        document.addEventListener('mouseup', onDrop);
+                        handle.style.background = '#58a6ff';
+                    });
+                    function onDrag(e) {
+                        var newH = startHeight - (e.clientY - startY);
+                        if (newH < 150) newH = 150;
+                        if (newH > window.innerHeight - 200) newH = window.innerHeight - 200;
+                        chatPanel.style.height = newH + 'px';
+                    }
+                    function onDrop() {
+                        document.removeEventListener('mousemove', onDrag);
+                        document.removeEventListener('mouseup', onDrop);
+                        handle.style.background = '';
+                    }
+                })();
+
+                console.log('BMC chat setup complete');
+            } catch(e) {
+                console.error('BMC setup error:', e);
             }
         }
     </script>

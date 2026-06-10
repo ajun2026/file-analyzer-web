@@ -69,10 +69,9 @@ def extract_archive(filepath: Path) -> Path:
         subprocess.run(['tar', '--lzop', '-xf', str(filepath), '-C', str(extract_dir)],
                        capture_output=True, timeout=300)
         return extract_dir
-    # tar.gz / tgz / tar
+    # tar.gz / tgz / tar — use 'xf' (auto-detect) because .tgz may be plain tar
     if filename.endswith('.tar.gz') or filename.endswith('.tgz') or filename.endswith('.tar'):
-        subprocess.run(['tar', 'xzf' if filename.endswith(('gz', 'tgz')) else 'xf',
-                        str(filepath), '-C', str(extract_dir)],
+        subprocess.run(['tar', 'xf', str(filepath), '-C', str(extract_dir)],
                        capture_output=True, timeout=180)
         return extract_dir
     ext = filepath.suffix.lower()
@@ -109,6 +108,13 @@ def find_log_dir(extract_dir: Path) -> tuple[Optional[Path], str]:
         for found in extract_dir.rglob(marker):
             if found.is_file():
                 return extract_dir, "bmc"  # Return full extract dir for BMC
+
+    # ── 2b. ThinkServer BMC diagnostic package: bmcos/ dir or log/err.log + log/oemsys.log ──
+    if (extract_dir / "bmcos").is_dir() or (
+        (extract_dir / "log" / "err.log").is_file() and
+        (extract_dir / "log" / "oemsys.log").is_file()
+    ):
+        return extract_dir, "bmc"
 
     # ── 3. Windows fallback: scan for .evtx or .dmp files ──
     for path in extract_dir.rglob("*.evtx"):
