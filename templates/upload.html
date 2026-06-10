@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thinkstation 日志诊断分析系统</title>
+    <title>IDG 日志诊断分析系统</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -83,7 +83,7 @@
 <body>
     <div class="container">
         <div class="logo">🔬</div>
-        <h1>Thinkstation 日志诊断分析系统</h1>
+        <h1>IDG 日志诊断分析系统</h1>
         <p class="subtitle">上传日志包 → 进入分析中心 → 多维度诊断</p>
 
         <label class="upload-zone" id="upload-zone" for="file-input">
@@ -200,7 +200,7 @@
         function showSNModal(file) {
             var ext = file.name.split('.').pop().toLowerCase();
             var nameLower = file.name.toLowerCase();
-            var isTar = nameLower.endsWith('.tar.gz') || nameLower.endsWith('.tgz') || nameLower.endsWith('.tar');
+            var isTar = nameLower.endsWith('.tar.gz') || nameLower.endsWith('.tgz') || nameLower.endsWith('.tar') || nameLower.endsWith('.tar.xz') || nameLower.endsWith('.tzz');
             if (!isTar && ['7z','zip','rar'].indexOf(ext) === -1) {
                 showError('不支持 .' + ext + ' 格式');
                 fileInput.value = '';

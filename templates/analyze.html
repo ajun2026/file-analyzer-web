@@ -256,8 +256,9 @@
                         const cat = item.category || '';
                         const catClass = cat ? 'cat-' + cat : '';
                         // Determine if file is clickable
-                        const ext = (item.name || '').split('.').pop().toLowerCase();
-                        const readable = ['txt','log','rom','csv','xml','ini','cfg','inf'].includes(ext) && item.size < 500*1024;
+                        const parts = (item.name || '').split('.');
+                        const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+                        const readable = ['txt','log','rom','csv','xml','ini','cfg','inf'].includes(ext) || ext === '' && item.size > 0;
                         const isDump = ext === 'dmp' && item.size > 0;
                         const clickable = readable || isDump;
                         const cls = clickable ? 'tree-file clickable' : 'tree-file';
@@ -766,8 +767,9 @@
                     document.getElementById('modal-content').textContent = '❌ ' + data.error;
                     document.getElementById('modal-meta').textContent = '';
                 } else {
-                    document.getElementById('modal-meta').textContent =
-                        (data.size/1024).toFixed(1) + ' KB | 编码: ' + (data.encoding || '?') + ' | ' + filePath;
+                    let metaText = (data.size/1024).toFixed(1) + ' KB | 编码: ' + (data.encoding || '?') + ' | ' + filePath;
+                    if (data.truncated) metaText += ' | ⚠️ ' + data.truncated_note;
+                    document.getElementById('modal-meta').textContent = metaText;
                     document.getElementById('modal-content').textContent = data.content;
                 }
             } catch (err) {

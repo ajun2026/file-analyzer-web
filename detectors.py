@@ -1,5 +1,6 @@
 """OS detection, archive extraction, encoding, history."""
 import json, os, subprocess, uuid
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -9,6 +10,7 @@ REPORT_DIR = BASE_DIR / "reports"
 HISTORY_FILE = REPORT_DIR / "history.json"
 
 MAX_EVENTS = 10000
+CHINA_TZ = timezone(timedelta(hours=8))
 
 def load_history() -> list:
     if HISTORY_FILE.exists():
@@ -51,10 +53,20 @@ def add_to_history(job_id: str, filename: str, size: float, evtx_count: int, tsl
     # Keep only last 50 entries
     save_history(history[:50])
 def detect_encoding(filepath: Path) -> str:
-    for enc in ['gbk', 'utf-16-le', 'utf-8']:
+    # Read first 4 bytes for BOM detection
+    with open(filepath, 'rb') as f:
+        head = f.read(4)
+    if head[:3] == b'\xef\xbb\xbf':
+        return 'utf-8-sig'
+    if head[:2] == b'\xff\xfe':
+        return 'utf-16-le'
+    if head[:2] == b'\xfe\xff':
+        return 'utf-16-be'
+    # No BOM — try UTF-8 first (strict), then GBK (common for Chinese Windows)
+    for enc in ['utf-8', 'gbk']:
         try:
             with open(filepath, 'r', encoding=enc) as f:
-                f.read(1024)
+                f.read(4096)
             return enc
         except (UnicodeDecodeError, UnicodeError):
             continue
@@ -70,14 +82,17 @@ def extract_archive(filepath: Path) -> Path:
         subprocess.run(['tar', '--lzop', '-xf', str(filepath), '-C', str(extract_dir)],
                        capture_output=True, timeout=300)
         return extract_dir
-    # tar.gz / tgz / tar — use 'xf' (auto-detect) because .tgz may be plain tar
-    if filename.endswith('.tar.gz') or filename.endswith('.tgz') or filename.endswith('.tar'):
+    # tar.gz / tgz / tar / tar.xz — use 'xf' (GNU tar auto-detects compression)
+    if any(filename.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar', '.tar.xz']):
         subprocess.run(['tar', 'xf', str(filepath), '-C', str(extract_dir)],
                        capture_output=True, timeout=180)
         return extract_dir
     ext = filepath.suffix.lower()
     if ext == '.7z':
         subprocess.run(['7z', 'x', '-y', str(filepath), f'-o{extract_dir}'],
+                       capture_output=True, timeout=120)
+    elif ext == '.rar':
+        subprocess.run(['unrar', 'x', '-y', str(filepath), str(extract_dir)],
                        capture_output=True, timeout=120)
     else:
         result = subprocess.run(['unzip', '-o', str(filepath), '-d', str(extract_dir)],

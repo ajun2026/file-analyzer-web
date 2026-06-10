@@ -94,21 +94,16 @@ for h in load_history():
     jid = h["job_id"]
     os_type = h.get("os_type", "windows")
     tslog_path = None
-    for ext_dir in UPLOAD_DIR.glob(f"extract_*{jid}*"):
+    ext_dir = None
+    # Find the extract directory for this job
+    for d in UPLOAD_DIR.glob(f"extract_*{jid}*"):
+        ext_dir = d
+        break
+    if ext_dir and ext_dir.exists():
         tslog, _ = find_log_dir(ext_dir)
-        if tslog:
-            tslog_path = str(tslog)
-            if os_type == "windows" or os_type != "linux":
-                normalize_log_structure(tslog)
-            break
+        tslog_path = str(tslog) if tslog else str(ext_dir)
     if not tslog_path:
-        for ext_dir in UPLOAD_DIR.glob("extract_*"):
-            tslog, os_type2 = find_log_dir(ext_dir)
-            if tslog and str(tslog).count(jid) > 0:
-                tslog_path = str(tslog)
-                if os_type2 == "windows" or os_type != "linux":
-                    normalize_log_structure(tslog)
-                break
+        continue  # skip if no extract dir found
     jobs[jid] = {
         "status": "ready", "progress": 0,
         "filename": h["filename"], "size": int(h["size_mb"] * 1048576),
@@ -234,9 +229,9 @@ async def get_file_content(job_id: str, path: str = ""):
     if not filepath.exists() or not filepath.is_file():
         return JSONResponse({"error": "文件不存在"}, status_code=404)
 
-    # Only allow readable text files + dmp
+    # Only allow readable text files + dmp (also allow extension-less files)
     ext = filepath.suffix.lower()
-    if ext not in ('.txt', '.log', '.rom', '.csv', '.xml', '.ini', '.cfg', '.inf', '.evt', '.dmp'):
+    if ext and ext not in ('.txt', '.log', '.rom', '.csv', '.xml', '.ini', '.cfg', '.inf', '.evt', '.dmp'):
         return JSONResponse({"error": f"不支持预览 .{ext} 文件"}, status_code=400)
 
     size = filepath.stat().st_size
@@ -273,9 +268,6 @@ async def get_file_content(job_id: str, path: str = ""):
             for i, evt in enumerate(info['event_1001'][:3], 1):
                 text_lines.append(f"  [{i}] {evt.get('time', '?')}")
         return JSONResponse({"content": "\n".join(text_lines), "size": size})
-
-    if size > 500 * 1024:
-        return JSONResponse({"error": "文件过大（>500KB），请下载后查看"}, status_code=400)
 
     enc = detect_encoding(filepath)
     try:
@@ -315,11 +307,11 @@ async def upload_file(file: UploadFile = File(...), sn: str = Form("")):
     filename = file.filename.lower()
     file_stem = Path(file.filename).suffix.lower()
 
-    # Accept .tar.gz, .tgz, .tzz as well as standard archives
-    is_tar = filename.endswith('.tar.gz') or filename.endswith('.tgz') or filename.endswith('.tar') or filename.endswith('.tzz')
+    # Accept .tar.gz, .tgz, .tzz, .tar.xz as well as standard archives
+    is_tar = any(filename.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar', '.tzz', '.tar.xz'])
     if not is_tar and file_stem not in ('.7z', '.zip', '.rar'):
         return JSONResponse(
-            {"error": f"不支持的文件格式，请上传 .7z / .zip / .rar (Windows) 或 .tar.gz / .tgz / .tar / .tzz (Linux/BMC)"},
+            {"error": f"不支持的文件格式，请上传 .7z / .zip / .rar (Windows) 或 .tar.gz / .tgz / .tar / .tar.xz / .tzz (Linux/BMC)"},
             status_code=400)
 
     # Determine extension for filename
@@ -329,6 +321,8 @@ async def upload_file(file: UploadFile = File(...), sn: str = Form("")):
         save_ext = '.tgz'
     elif filename.endswith('.tzz'):
         save_ext = '.tzz'
+    elif filename.endswith('.tar.xz'):
+        save_ext = '.tar.xz'
     else:
         save_ext = file_stem
 
