@@ -103,7 +103,27 @@ def extract_archive(filepath: Path) -> Path:
     return extract_dir
 def find_log_dir(extract_dir: Path) -> tuple[Optional[Path], str]:
     """Returns (log_dir_path, os_type) where os_type is 'windows', 'linux', 'bmc', or 'other'"""
-    # ── 1. Windows: look for tslog/ or oslog/ ──
+    # ── 1. BMC / XCC FFDC: detect FIRST because BMC packages often
+    #       contain tslog/ directories (which would otherwise be misdetected
+    #       as pure Windows). Also, BMC packages contain var/log/ from the
+    #       BMC's internal Linux filesystem. ──
+    bmc_markers = ['ffdc.log', 'bmc-err.log', 'kernel-err.log',
+                   'component_activity.log', 'syshealth.log',
+                   'security.log', 'system.log', 'bmc-warn.log',
+                   'xcc_pl_error.log', 'pfr_device.log', 'bmc-loop.log']
+    for marker in bmc_markers:
+        for found in extract_dir.rglob(marker):
+            if found.is_file():
+                return extract_dir, "bmc"
+
+    # ── 1b. ThinkServer BMC diagnostic package: bmcos/ dir ──
+    if (extract_dir / "bmcos").is_dir() or (
+        (extract_dir / "log" / "err.log").is_file() and
+        (extract_dir / "log" / "oemsys.log").is_file()
+    ):
+        return extract_dir, "bmc"
+
+    # ── 2. Windows: look for tslog/ or oslog/ ──
     tslog = extract_dir / "tslog"
     if tslog.is_dir():
         return tslog, "windows"
@@ -112,25 +132,6 @@ def find_log_dir(extract_dir: Path) -> tuple[Optional[Path], str]:
             return path, "windows"
     if (extract_dir / "oslog").is_dir():
         return extract_dir, "windows"
-
-    # ── 2. BMC / XCC FFDC: detect BEFORE Linux because BMC packages
-    #       often contain var/log/ from the BMC's internal Linux filesystem ──
-    bmc_markers = ['ffdc.log', 'bmc-err.log', 'kernel-err.log',
-                   'component_activity.log', 'syshealth.log',
-                   'security.log', 'system.log', 'bmc-warn.log',
-                   'xcc_pl_error.log', 'pfr_device.log', 'bmc-loop.log']
-    for marker in bmc_markers:
-        # Recursive search: BMC markers can be deep inside tmp/ etc.
-        for found in extract_dir.rglob(marker):
-            if found.is_file():
-                return extract_dir, "bmc"  # Return full extract dir for BMC
-
-    # ── 2b. ThinkServer BMC diagnostic package: bmcos/ dir or log/err.log + log/oemsys.log ──
-    if (extract_dir / "bmcos").is_dir() or (
-        (extract_dir / "log" / "err.log").is_file() and
-        (extract_dir / "log" / "oemsys.log").is_file()
-    ):
-        return extract_dir, "bmc"
 
     # ── 3. Windows fallback: scan for .evtx or .dmp files ──
     for path in extract_dir.rglob("*.evtx"):

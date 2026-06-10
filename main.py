@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Log Analyzer — FastAPI entry point."""
-import json, os, uuid, threading, subprocess, shutil
+import json, os, uuid, threading, subprocess, shutil, re
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -543,6 +543,202 @@ async def chat_endpoint(job_id: str, request: Request):
 HERMES_QUEUE = BASE_DIR / "hermes_queue"
 HERMES_PENDING = HERMES_QUEUE / "pending"
 HERMES_DONE = HERMES_QUEUE / "done"
+HERMES_QUICK = HERMES_QUEUE / "quick"
+HERMES_LOCK = HERMES_QUEUE / ".processing_lock"
+
+
+def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
+    """Process a deep analysis request immediately in background."""
+    import subprocess
+    try:
+        # Simple lock: only one processing at a time
+        lock_file = HERMES_LOCK
+        if lock_file.exists():
+            return  # Another process is already handling it
+
+        lock_file.touch()
+        try:
+            message = payload.get("message", "").lower()
+            os_type = payload.get("os_type", "unknown")
+
+            # Determine what the user is asking about
+            want_dump = any(w in message for w in ["dump", "蓝屏", "崩溃", "crash", "bugcheck", "bsod", "蓝"])
+            want_disk = any(w in message for w in ["硬盘", "磁盘", "disk", "smart", "坏道", "健康"])
+            want_error = any(w in message for w in ["报错", "错误", "error", "异常", "问题", "整体", "全部", "所有", "综合"])
+            want_overview = not (want_dump or want_disk or want_error) or want_error
+
+            reply_parts = []
+
+            # ── System overview ──
+            if want_overview or want_error:
+                systeminfo = _find_read_file(tslog, ["systeminfo.txt", "systeminfo*", "Systeminfo*"])
+                dxdiag = _find_read_file(tslog, ["dxdiag.txt", "dxdiag*", "DxDiag*"])
+
+                if systeminfo:
+                    hostname = re.search(r'主机名.*?(\S+)', systeminfo)
+                    model = re.search(r'系统型号.*?(\S.+)', systeminfo)
+                    cpu = re.search(r'\[01\].*?(Intel.*?Mhz)', systeminfo)
+                    ram = re.search(r'物理内存总量.*?([\d,]+) MB', systeminfo)
+                    bios = re.search(r'BIOS 版本.*?(\S.+)', systeminfo)
+
+                    overview = []
+                    if hostname: overview.append(f"**主机名**: {hostname.group(1)}")
+                    if model: overview.append(f"**型号**: {model.group(1)}")
+                    if cpu: overview.append(f"**CPU**: {cpu.group(1)}")
+                    if ram: overview.append(f"**内存**: {ram.group(1)} MB")
+                    if bios: overview.append(f"**BIOS**: {bios.group(1)}")
+                    if overview:
+                        reply_parts.append("## 📋 系统概览\n" + "\n".join(f"- {o}" for o in overview))
+
+            # ── Crash/Dump analysis ──
+            if want_dump or want_error:
+                dumps = list((tslog / "osdump").glob("*.dmp")) if (tslog / "osdump").is_dir() else []
+                minidumps = [d for d in dumps if d.name != "MEMORY.DMP"]
+
+                # Check System.evtx for bugcheck events
+                system_evtx = tslog / "oslog" / "System.evtx"
+                crash_events = []
+                bugcheck_code = ""
+                if system_evtx.exists():
+                    try:
+                        for eid, level, ts_str, prov, root in iter_evtx(system_evtx, max_events=3000):
+                            if eid == 1001:  # BugCheck
+                                for child in root.iter():
+                                    if child.tag.endswith('}Data') and child.get('Name') == 'param1':
+                                        code = child.text or ""
+                                        m = re.search(r'0x([0-9a-f]+)', code)
+                                        if m:
+                                            bugcheck_code = m.group(1)
+                                crash_events.append({"type": "bugcheck", "code": bugcheck_code, "time": ts_str})
+                            elif eid == 41:  # Kernel-Power
+                                bugcheck = 0
+                                for child in root.iter():
+                                    if child.tag.endswith('}Data') and child.get('Name') == 'BugcheckCode':
+                                        try:
+                                            bugcheck = int(child.text or "0")
+                                        except:
+                                            pass
+                                crash_events.append({"type": "power", "code": bugcheck, "time": ts_str})
+                            if len(crash_events) >= 50:
+                                break
+                    except Exception:
+                        pass
+
+                if minidumps or bugcheck_code or crash_events:
+                    dump_section = ["## 🔴 崩溃/Dump 分析"]
+                    if minidumps:
+                        dump_section.append(f"\n**Dump 文件**: {len(minidumps)} 个 minidump + MEMORY.DMP")
+                    if bugcheck_code:
+                        bugcheck_desc = {
+                            "124": "WHEA_UNCORRECTABLE_ERROR (硬件错误)",
+                            "9f": "DRIVER_POWER_STATE_FAILURE",
+                            "133": "DPC_WATCHDOG_VIOLATION",
+                            "1e": "KMODE_EXCEPTION_NOT_HANDLED",
+                            "50": "PAGE_FAULT_IN_NONPAGED_AREA",
+                            "7e": "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
+                            "3b": "SYSTEM_SERVICE_EXCEPTION",
+                            "d1": "DRIVER_IRQL_NOT_LESS_OR_EQUAL",
+                        }.get(bugcheck_code.lower(), f"BugCheck 0x{bugcheck_code}")
+                        dump_section.append(f"\n**BugCheck**: 0x{bugcheck_code} — {bugcheck_desc}")
+
+                    if crash_events:
+                        crash_types = {}
+                        for ce in crash_events:
+                            ct = ce["type"]
+                            crash_types[ct] = crash_types.get(ct, 0) + 1
+                        dump_section.append(f"\n**崩溃统计**: BugCheck {crash_types.get('bugcheck', 0)} 次 / 异常断电 {crash_types.get('power', 0)} 次")
+
+                    reply_parts.append("\n".join(dump_section))
+
+            # ── Disk/SMART analysis ──
+            if want_disk or want_error:
+                smart = _find_read_file(tslog, ["SMARTINFO.txt", "smartinfo*", "SMART*"])
+                if smart:
+                    disk_issues = []
+                    # Check for bad sectors
+                    pending = re.findall(r'Current_Pending_Sector\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)', smart)
+                    uncorrect = re.findall(r'Offline_Uncorrectable\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)', smart)
+                    ata_errs = re.findall(r'ATA Error Count.*?(\d+)', smart)
+                    realloc = re.findall(r'Reallocated_Sector_Ct\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)', smart)
+
+                    if any(int(v) > 0 for v in pending):
+                        disk_issues.append(f"🔴 **待映射坏扇区**: {', '.join(pending)} 个")
+                    if any(int(v) > 0 for v in uncorrect):
+                        disk_issues.append(f"🔴 **不可修复扇区**: {', '.join(uncorrect)} 个")
+                    if any(int(v) > 5 for v in realloc):
+                        disk_issues.append(f"🟡 **已重映射扇区**: {', '.join(realloc)} 个")
+                    if any(int(v) > 0 for v in ata_errs):
+                        disk_issues.append(f"🟡 **ATA 错误**: {', '.join(ata_errs)} 次")
+
+                    # Uncountable shutdowns from NVMe
+                    unsafe = re.findall(r'Unsafe Shutdowns:\s+(\d+)', smart)
+                    if unsafe and any(int(v) > 100 for v in unsafe):
+                        disk_issues.append(f"⚠️ **异常断电次数**: {max(int(v) for v in unsafe)} 次")
+
+                    if disk_issues:
+                        reply_parts.append("## 💾 磁盘健康\n" + "\n".join(f"- {d}" for d in disk_issues))
+
+            # ── Event log errors ──
+            if want_error:
+                system_evtx = tslog / "oslog" / "System.evtx"
+                if system_evtx.exists():
+                    try:
+                        err_count = {"Critical": 0, "Error": 0, "Warning": 0}
+                        levels = {1: "Critical", 2: "Error", 3: "Warning"}
+                        for eid, level, ts_str, prov, root in iter_evtx(system_evtx, max_events=5000):
+                            if level in levels:
+                                err_count[levels[level]] += 1
+                        if err_count["Error"] + err_count["Critical"] > 0:
+                            reply_parts.append(
+                                "## 📝 系统事件\n"
+                                f"- 🔴 Critical: {err_count['Critical']} 条 | Error: {err_count['Error']} 条\n"
+                                f"- 🟡 Warning: {err_count['Warning']} 条"
+                            )
+                    except Exception:
+                        pass
+
+            # Determine if this is a complex question that needs AI
+            complex_keywords = ["详细", "整体", "全部", "所有", "关联", "分析", "深入", "全面", "综合", "总结"]
+            is_complex = any(w in message for w in complex_keywords)
+
+            # ── Compile final reply ──
+            if is_complex:
+                # Complex questions: don't write quick result, let AI handle it
+                reply = None  # signal: skip quick, wait for AI
+            elif reply_parts:
+                reply = "\n\n".join(reply_parts)
+                reply += "\n\n---\n> 💡 快速诊断中，AI 深度分析正在后台处理，结果将自动更新..."
+            else:
+                reply = "🔍 正在读取日志文件进行深度分析..."
+
+            # Write to QUICK (not DONE) — let the cron/Hermes Agent write the final DONE
+            if reply is not None:
+                HERMES_QUICK.mkdir(parents=True, exist_ok=True)
+                quick_file = HERMES_QUICK / f"{request_id}.json"
+                with open(quick_file, "w", encoding="utf-8") as f:
+                    json.dump({"request_id": request_id, "reply": reply}, f, ensure_ascii=False, indent=2)
+
+        finally:
+            # Clean up lock, but do NOT delete pending — cron still needs it
+            if lock_file.exists():
+                lock_file.unlink()
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+def _find_read_file(tslog: Path, names: list) -> str:
+    """Find and read a file by candidate names."""
+    for name in names:
+        for path in tslog.rglob(name):
+            if path.is_file():
+                try:
+                    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                        return f.read(min(path.stat().st_size, 500 * 1024))
+                except Exception:
+                    pass
+    return ""
 
 
 @app.post("/api/chat-hermes/{job_id}")
@@ -590,6 +786,13 @@ async def chat_hermes_submit(job_id: str, body: dict):
     with open(req_file, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
+    # Immediately start background analysis (don't wait for cron)
+    thread = threading.Thread(
+        target=_process_hermes_request_bg,
+        args=(payload, request_id, tslog),
+        daemon=True)
+    thread.start()
+
     return JSONResponse({"request_id": request_id, "status": "pending"})
 
 
@@ -606,6 +809,16 @@ async def chat_hermes_poll(job_id: str, rid: str = ""):
             with open(done_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return JSONResponse({"status": "done", "reply": data.get("reply", "")})
+        except Exception:
+            pass
+
+    # Check for quick analysis fallback
+    quick_file = HERMES_QUICK / f"{rid}.json"
+    if quick_file.exists():
+        try:
+            with open(quick_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return JSONResponse({"status": "quick", "reply": data.get("reply", "")})
         except Exception:
             pass
 

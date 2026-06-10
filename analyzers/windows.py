@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from collections import Counter
 import json, re, os
 from analyzers.dump_parser import parse_single_dump, get_bugcheck_info
+from detectors import detect_encoding, iter_evtx, CHINA_TZ, REPORT_DIR
 
 def analyze_overview(tslog: Path) -> dict:
     """📊 系统概览：结构化提取硬件/OS/软件信息"""
@@ -886,24 +887,40 @@ def analyze_summary(tslog: Path) -> dict:
     # We need the job_id - search reports dir for files matching this tslog's parent
     import re
     job_id = None
-    for rp in REPORT_DIR.glob("*_overview.json"):
-        jid = rp.stem.replace("_overview", "")
-        # Check if this job's tslog matches
-        if jid in jobs and jobs[jid].get("tslog_path") == str(tslog):
-            job_id = jid
-            break
+    # Try to find job by matching tslog_path in-memory
+    try:
+        from main import jobs as _jobs
+        for rp in REPORT_DIR.glob("*_overview.json"):
+            jid = rp.stem.replace("_overview", "")
+            if jid in _jobs and _jobs[jid].get("tslog_path") == str(tslog):
+                job_id = jid
+                break
+    except ImportError:
+        pass
 
-    for atype in _STANDARD_TYPES:
+    # Lazy import to avoid circular deps with main
+    try:
+        from main import _STANDARD_TYPES as _st, ANALYZERS as _az
+    except ImportError:
+        _st = ["overview", "diagnostics", "dump", "siolog"]
+        _az = {
+            "overview": analyze_overview,
+            "diagnostics": analyze_system_diagnostics,
+            "dump": analyze_dump,
+            "siolog": analyze_siolog,
+        }
+
+    for atype in _st:
         try:
             # Try cached report first
             if job_id:
                 cached = REPORT_DIR / f"{job_id}_{atype}.json"
-                if cached.exists():
+                if cached.exists() and cached.stat().st_size > 50:
                     with open(cached, 'r', encoding='utf-8') as f:
                         results[atype] = json.load(f)
                     continue
             # Fall back to live analysis
-            analyzer = ANALYZERS.get(atype)
+            analyzer = _az.get(atype)
             if analyzer:
                 results[atype] = analyzer(tslog)
         except Exception as e:

@@ -162,7 +162,7 @@
             </div>
         </div>
         <div class="main">
-            {% if os_type in ('bmc', 'other') %}
+            {% if os_type == 'other' %}
             <!-- === BMC/Other: file-explorer + AI chat layout === -->
             <div class="other-layout">
                 <div class="other-viewer" id="other-viewer">
@@ -204,7 +204,7 @@
             {% else %}
             <!-- === Windows / Linux: tabbed analysis === -->
             <div class="tabs" id="tabs">
-                {% if os_type == 'linux' %}
+                {% if os_type in ('linux', 'bmc') %}
                 <div class="tab" data-type="linux_overview">📄 系统概览</div>
                 <div class="tab" data-type="linux_kernel">🔧 内核诊断</div>
                 <div class="tab" data-type="linux_syslog">📋 系统日志</div>
@@ -241,8 +241,8 @@
         const jobId = '{{ job_id }}';
         document.getElementById('job-id-display').textContent = 'ID: ' + jobId;
         const osType = '{{ os_type }}';
-        const isOtherLayout = osType === 'bmc' || osType === 'other';
-        let currentType = isOtherLayout ? 'chat' : '{{ "linux_summary" if os_type == "linux" else "summary" }}';
+        const isOtherLayout = osType === 'other';
+        let currentType = isOtherLayout ? 'chat' : '{{ "linux_summary" if os_type in ("linux", "bmc") else "summary" }}';
         let analysisCache = {};
         // Chat mode: 'api' (DeepSeek) or 'hermes' (local agent bridge)
         let chatMode = 'api';
@@ -259,6 +259,7 @@
         }
         // Polling for hermes bridge responses
         let hermesPollTimer = null;
+        let hermesQuickShown = false;
         async function pollHermesResponse(requestId) {
             var msgs = document.getElementById('chat-messages');
             var typingEl = document.getElementById('hermes-typing');
@@ -270,7 +271,9 @@
                 msgs.appendChild(typingEl);
             }
             var startTime = Date.now();
-            var maxWait = 300000;                
+            var maxWait = 300000;
+            var quickWait = 60000;  // keep polling for 60s after quick result
+            var quickReceivedAt = 0;
             hermesPollTimer = setInterval(async function() {
                 try {
                     var r = await fetch('../api/chat-hermes/' + jobId + '/poll?rid=' + encodeURIComponent(requestId));
@@ -278,15 +281,46 @@
                     if (d.status === 'done') {
                         clearInterval(hermesPollTimer);
                         if (typingEl && typingEl.parentNode) typingEl.remove();
+                        // Remove quick placeholder if exists
+                        var qp = document.getElementById('hermes-quick-' + requestId);
+                        if (qp && qp.parentNode) qp.remove();
                         appendMessage('assistant', d.reply, 'hermes');
                         var inp = document.getElementById('chat-input');
                         var btn = document.getElementById('chat-send-btn');
                         if (inp) inp.disabled = false;
                         if (btn) btn.disabled = false;
+                    } else if (d.status === 'quick' && !hermesQuickShown) {
+                        // Show quick result but KEEP polling for the full version
+                        hermesQuickShown = true;
+                        quickReceivedAt = Date.now();
+                        if (typingEl && typingEl.parentNode) typingEl.remove();
+                        var quickReply = '⚡ **快速诊断** · AI 深度分析更新中...\n\n' + (d.reply || '');
+                        appendMessage('assistant', quickReply, 'hermes');
+                        // Tag the last message so we can replace it later
+                        var allMsgs = document.getElementById('chat-messages').children;
+                        if (allMsgs.length > 0) {
+                            allMsgs[allMsgs.length - 1].id = 'hermes-quick-' + requestId;
+                        }
+                    } else if (d.status === 'quick' && hermesQuickShown) {
+                        // Already showing quick, check if we should stop waiting
+                        if (Date.now() - quickReceivedAt > quickWait) {
+                            clearInterval(hermesPollTimer);
+                            // Update badge to indicate final
+                            var qp = document.getElementById('hermes-quick-' + requestId);
+                            if (qp) {
+                                qp.innerHTML = qp.innerHTML.replace('AI 深度分析更新中...', '（AI 分析未及时响应）');
+                            }
+                            var inp = document.getElementById('chat-input');
+                            var btn = document.getElementById('chat-send-btn');
+                            if (inp) inp.disabled = false;
+                            if (btn) btn.disabled = false;
+                        }
                     } else if (Date.now() - startTime > maxWait) {
                         clearInterval(hermesPollTimer);
                         if (typingEl && typingEl.parentNode) typingEl.remove();
-                        appendMessage('assistant', '⏰ 深度分析超时（5分钟），请稍后重试或切换 AI 对话模式。');
+                        if (!hermesQuickShown) {
+                            appendMessage('assistant', '⏰ 深度分析超时（5分钟），请稍后重试或切换 AI 对话模式。');
+                        }
                         var inp = document.getElementById('chat-input');
                         var btn = document.getElementById('chat-send-btn');
                         if (inp) inp.disabled = false;
