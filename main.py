@@ -28,6 +28,11 @@ jinja_env = jinja2.Environment(
 jobs = {}
 chat_sessions = {}
 
+# Inject globals into submodules that reference them
+import chat.function_call as _fc
+_fc.jobs = jobs
+_fc.chat_sessions = chat_sessions
+
 ANALYZERS = {
     "overview": analyze_overview,
     "diagnostics": analyze_system_diagnostics,
@@ -513,6 +518,9 @@ async def download_file(job_id: str):
             )
 
     return JSONResponse({"error": "文件不存在或已被删除"}, status_code=404)
+
+
+@app.post("/api/chat/{job_id}")
 async def chat_endpoint(job_id: str, request: Request):
     """AI chat endpoint — Function Calling for Windows/Linux, context injection for BMC/other"""
     body = await request.json()

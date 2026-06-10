@@ -3,6 +3,7 @@ import httpx
 from pathlib import Path
 from fastapi.responses import JSONResponse
 from detectors import detect_encoding
+from chat.function_call import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 
 async def _chat_context_inject(job_id: str, user_message: str, tslog, os_type: str):
     """Context injection mode for BMC/other — gather all readable files, inject as system prompt, one-shot."""
