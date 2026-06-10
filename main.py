@@ -30,9 +30,6 @@ chat_sessions = {}
 
 ANALYZERS = {
     "overview": analyze_overview,
-    "reboot": analyze_reboot,
-    "hardware": analyze_hardware,
-    "events": analyze_events,
     "diagnostics": analyze_system_diagnostics,
     "dump": analyze_dump,
     "siolog": analyze_siolog,
@@ -85,13 +82,17 @@ def run_analysis_bg(job_id: str, analysis_type: str):
     except Exception as e:
         jobs[job_id]["status"] = "error"
         jobs[job_id]["error"] = str(e)
+
+
+# ─── Restore jobs from history on startup ──────────────────
+for h in load_history():
+    jid = h["job_id"]
     os_type = h.get("os_type", "windows")
     tslog_path = None
     for ext_dir in UPLOAD_DIR.glob(f"extract_*{jid}*"):
         tslog, _ = find_log_dir(ext_dir)
         if tslog:
             tslog_path = str(tslog)
-            # Normalize structure on restore (for non-standard layouts)
             if os_type == "windows" or os_type != "linux":
                 normalize_log_structure(tslog)
             break
@@ -113,6 +114,7 @@ def run_analysis_bg(job_id: str, analysis_type: str):
 
 
 # ─── Routes ───────────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
 async def index():
     history = load_history()
     return jinja_env.get_template("upload.html").render(history_json=json.dumps(history, ensure_ascii=False))

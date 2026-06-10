@@ -6,6 +6,7 @@ from typing import Optional
 BASE_DIR = Path("/opt/log-analyzer")
 UPLOAD_DIR = BASE_DIR / "uploads"
 REPORT_DIR = BASE_DIR / "reports"
+HISTORY_FILE = REPORT_DIR / "history.json"
 
 MAX_EVENTS = 10000
 
