@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDG 日志诊断分析系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+            color: #c9d1d9; min-height: 100vh;
+        }
+        .container { max-width: 900px; width: 90%; margin: 0 auto; padding: 48px 20px; text-align: center; }
+        .logo { font-size: 48px; margin-bottom: 16px; }
+        h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; color: #f0f6fc; }
+        .subtitle { color: #8b949e; font-size: 15px; margin-bottom: 40px; }
+        .upload-zone {
+            display: block; border: 2px dashed #30363d; border-radius: 12px; padding: 60px 30px;
+            cursor: pointer; transition: all 0.2s; background: #161b22; margin-bottom: 24px;
+        }
+        .upload-zone:hover, .upload-zone.dragover { border-color: #58a6ff; background: #1c2333; }
+        .upload-zone .icon { font-size: 56px; margin-bottom: 16px; opacity: 0.6; }
+        .upload-zone p { font-size: 16px; color: #8b949e; }
+        .upload-zone .formats { font-size: 13px; color: #484f58; margin-top: 8px; }
+        #file-input { display: none; }
+        .progress-wrap { display: none; margin-top: 16px; }
+        .progress-bar { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #238636, #3fb950); border-radius: 3px; transition: width 0.3s; }
+        .progress-text { font-size: 13px; color: #8b949e; margin-top: 8px; }
+        .error-box { display: none; background: #490202; border: 1px solid #f85149; border-radius: 8px; padding: 16px; margin-top: 16px; color: #f85149; font-size: 14px; text-align: left; }
+
+        /* SN Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+            max-width: 440px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            animation: modalIn 0.2s ease-out; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(-10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-header { padding: 20px 24px 0; }
+        .modal-header h2 { font-size: 18px; color: #f0f6fc; }
+        .modal-header .file-hint { font-size: 13px; color: #8b949e; margin-top: 6px; line-height: 1.5; }
+        .modal-body { padding: 20px 24px; }
+        .modal-body label { display: block; font-size: 14px; color: #8b949e; margin-bottom: 8px; }
+        .modal-body input { width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+            padding: 10px 14px; color: #c9d1d9; font-size: 15px;
+            font-family: "SF Mono", "Fira Code", monospace; outline: none;
+            transition: border-color 0.2s; text-align: center; letter-spacing: 1px; }
+        .modal-body input:focus { border-color: #58a6ff; }
+        .modal-body input::placeholder { color: #484f58; letter-spacing: 0; }
+        .modal-footer { padding: 0 24px 20px; display: flex; gap: 10px; justify-content: flex-end; }
+        .btn-cancel { background: #21262d; color: #8b949e; border: 1px solid #30363d; padding: 9px 20px;
+            border-radius: 8px; font-size: 14px; cursor: pointer; transition: all 0.15s; }
+        .btn-cancel:hover { background: #30363d; color: #c9d1d9; }
+        .btn-confirm { background: #1f6feb; color: #fff; border: none; padding: 9px 24px;
+            border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .btn-confirm:hover { background: #388bfd; }
+        .btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* History section */
+        .history-section { margin-top: 48px; text-align: left; }
+        .history-section h2 { font-size: 20px; color: #f0f6fc; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .history-table th { color: #8b949e; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
+        .history-table td { padding: 12px; border-bottom: 1px solid #21262d36; vertical-align: middle; }
+        .history-table tr:hover { background: #161b22; }
+        .history-table tr:hover td:first-child { border-left: 3px solid #58a6ff; }
+        .history-table .name { color: #58a6ff; font-weight: 600; cursor: pointer; text-decoration: none; }
+        .history-table .name:hover { text-decoration: underline; }
+        .history-table .meta { color: #8b949e; font-size: 12px; }
+        .history-table .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; }
+        .badge-dump { background: #490202; color: #f85149; }
+        .badge-siolog { background: #2e1e00; color: #d29922; }
+        .badge-events { background: #0d2b4e; color: #58a6ff; }
+        .empty-history { color: #484f58; font-size: 14px; text-align: center; padding: 40px 0; }
+        .btn-delete { background: none; border: 1px solid #30363d; color: #8b949e; padding: 4px 10px; border-radius: 6px;
+            cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .btn-delete:hover { color: #f85149; border-color: #f85149; background: #490202; }
+        .btn-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🔬</div>
+        <h1>IDG 日志诊断分析系统</h1>
+        <p class="subtitle">上传日志包 → 进入分析中心 → 多维度诊断</p>
+
+        <label class="upload-zone" id="upload-zone" for="file-input">
+            <div class="icon">📦</div>
+            <p>拖拽日志文件到此处，或点击选择</p>
+            <p class="formats">支持 .7z / .zip / .rar (Windows) &nbsp;|&nbsp; .tar.gz / .tar / .tzz (Linux/BMC) &nbsp;|&nbsp; 最大 500MB</p>
+        </label>
+        <input type="file" id="file-input" accept=".7z,.zip,.rar,.tar.gz,.tgz,.tar,.tzz">
+
+        <div class="progress-wrap" id="upload-progress">
+            <div class="progress-bar"><div class="progress-fill" id="upload-fill"></div></div>
+            <p class="progress-text" id="upload-text">正在上传...</p>
+        </div>
+
+        <div class="error-box" id="error-box"></div>
+
+        <div class="modal-overlay" id="sn-modal">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>🖥️ 请输入主机 SN</h2>
+                    <p class="file-hint" id="sn-file-hint">用于区分上传来源</p>
+                </div>
+                <div class="modal-body">
+                    <label for="sn-input">主机序列号</label>
+                    <input type="text" id="sn-input" placeholder="例如：PC0ABCDEFG" maxlength="30" autocomplete="off">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" id="sn-cancel-btn">取消</button>
+                    <button class="btn-confirm" id="sn-confirm-btn">确认上传</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="history-section">
+            <h2>📋 历史记录</h2>
+            <div id="history-container">
+                <div class="empty-history">暂无上传记录</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        // ── Parse history data from server ──
+        var historyData = {{ history_json | safe }};
+        var pendingFile = null;
+
+        // ── DOM refs ──
+        var uploadZone = document.getElementById('upload-zone');
+        var fileInput = document.getElementById('file-input');
+        var uploadProgress = document.getElementById('upload-progress');
+        var uploadFill = document.getElementById('upload-fill');
+        var uploadText = document.getElementById('upload-text');
+        var errorBox = document.getElementById('error-box');
+        var snModal = document.getElementById('sn-modal');
+        var snInput = document.getElementById('sn-input');
+        var snFileHint = document.getElementById('sn-file-hint');
+        var snConfirmBtn = document.getElementById('sn-confirm-btn');
+        var snCancelBtn = document.getElementById('sn-cancel-btn');
+
+        // ── Helpers ──
+        function escHtml(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+        function formatMB(bytes) { return bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KB' : (bytes / 1048576).toFixed(1) + ' MB'; }
+        function osTypeBadge(osType) {
+            if (osType === 'windows') return '<span class="badge" style="background:#0d2b4e;color:#58a6ff;">🪟 Windows</span>';
+            if (osType === 'linux') return '<span class="badge" style="background:#0d3320;color:#3fb950;">🐧 Linux</span>';
+            if (osType === 'bmc') return '<span class="badge" style="background:#2e1e00;color:#d29922;">🔧 BMC</span>';
+            return '<span class="badge" style="background:#21262d;color:#8b949e;">📁 ' + escHtml(osType || '未知') + '</span>';
+        }
+
+        // ── Render history table ──
+        function renderHistory() {
+            var el = document.getElementById('history-container');
+            if (!historyData || !historyData.length) {
+                el.innerHTML = '<div class="empty-history">暂无上传记录</div>';
+                return;
+            }
+            var html = '<table class="history-table"><thead><tr><th>文件名</th><th>主机 SN</th><th>系统</th><th>大小</th><th>上传时间</th><th>内容</th><th>操作</th></tr></thead><tbody>';
+            for (var i = 0; i < historyData.length; i++) {
+                var h = historyData[i];
+                var dt = h.created_at ? new Date(h.created_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}) : '-';
+                var badges = '';
+                if (h.dump) badges += '<span class="badge badge-dump">💾 Dump</span>';
+                if (h.siolog) badges += '<span class="badge badge-siolog">📋 SIO</span>';
+                if (h.evtx_count > 0) badges += '<span class="badge badge-events">📝 ' + h.evtx_count + ' evtx</span>';
+                var snDisplay = h.sn ? '<span style="font-family:\'SF Mono\',\'Fira Code\',monospace;color:#58a6ff;font-size:13px;">' + escHtml(h.sn) + '</span>' : '<span style="color:#484f58;">-</span>';
+                html += '<tr>' +
+                    '<td><a class="name" href="analyze/' + h.job_id + '">' + escHtml(h.name || h.filename) + '</a></td>' +
+                    '<td>' + snDisplay + '</td>' +
+                    '<td>' + osTypeBadge(h.os_type) + '</td>' +
+                    '<td><span class="meta">' + h.size_mb + ' MB</span></td>' +
+                    '<td><span class="meta">' + dt + '</span></td>' +
+                    '<td>' + (badges || '<span class="meta">-</span>') + '</td>' +
+                    '<td style="display:flex;gap:8px;align-items:center;">' +
+                        '<a class="name" href="analyze/' + h.job_id + '" style="font-size:13px;">进入分析 →</a>' +
+                        '<a class="name" href="api/download/' + h.job_id + '" style="font-size:13px;" title="下载原始文件">⬇ 下载</a>' +
+                        '<button class="btn-delete" data-jobid="' + h.job_id + '" title="删除此记录及所有关联文件">🗑</button>' +
+                    '</td>' +
+                '</tr>';
+            }
+            html += '</tbody></table>';
+            el.innerHTML = html;
+            // Bind delete buttons
+            var btns = el.querySelectorAll('.btn-delete');
+            for (var j = 0; j < btns.length; j++) {
+                btns[j].addEventListener('click', (function(jid) {
+                    return function() { deleteJob(jid, this); };
+                })(btns[j].dataset.jobid));
+            }
+        }
+        renderHistory();
+
+        // ── File selection → SN modal ──
+        function showSNModal(file) {
+            var ext = file.name.split('.').pop().toLowerCase();
+            var nameLower = file.name.toLowerCase();
+            var isTar = nameLower.endsWith('.tar.gz') || nameLower.endsWith('.tgz') || nameLower.endsWith('.tar') || nameLower.endsWith('.tar.xz') || nameLower.endsWith('.tzz');
+            if (!isTar && ['7z','zip','rar'].indexOf(ext) === -1) {
+                showError('不支持 .' + ext + ' 格式');
+                fileInput.value = '';
+                return;
+            }
+            pendingFile = file;
+            snFileHint.textContent = '文件：' + file.name + '（' + formatMB(file.size) + '）';
+            snInput.value = '';
+            snModal.classList.add('open');
+            setTimeout(function() { snInput.focus(); }, 150);
+        }
+
+        function closeSNModal() {
+            snModal.classList.remove('open');
+            pendingFile = null;
+            fileInput.value = '';
+        }
+
+        function confirmUpload() {
+            var sn = snInput.value.trim();
+            if (!sn) {
+                snInput.focus();
+                snInput.style.borderColor = '#f85149';
+                setTimeout(function() { snInput.style.borderColor = ''; }, 1500);
+                return;
+            }
+            snModal.classList.remove('open');
+            doUpload(pendingFile, sn);
+        }
+
+        fileInput.addEventListener('change', function() {
+            if (fileInput.files.length) showSNModal(fileInput.files[0]);
+        });
+
+        uploadZone.addEventListener('dragover', function(e) { e.preventDefault(); uploadZone.classList.add('dragover'); });
+        uploadZone.addEventListener('dragleave', function() { uploadZone.classList.remove('dragover'); });
+        uploadZone.addEventListener('drop', function(e) {
+            e.preventDefault(); uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) showSNModal(e.dataTransfer.files[0]);
+        });
+
+        snConfirmBtn.addEventListener('click', confirmUpload);
+        snCancelBtn.addEventListener('click', closeSNModal);
+        snInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') confirmUpload();
+            else if (e.key === 'Escape') closeSNModal();
+        });
+        snModal.addEventListener('click', function(e) {
+            if (e.target === snModal) closeSNModal();
+        });
+
+        // ── Upload ──
+        function doUpload(file, sn) {
+            errorBox.style.display = 'none';
+            uploadZone.style.display = 'none';
+            uploadProgress.style.display = 'block';
+            uploadFill.style.width = '0%';
+            uploadText.textContent = '正在上传...';
+
+            var formData = new FormData();
+            formData.append('file', file);
+            formData.append('sn', sn);
+
+            var xhr = new XMLHttpRequest();
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    var pct = Math.round((e.loaded / e.total) * 90);
+                    uploadFill.style.width = pct + '%';
+                    uploadText.textContent = '正在上传... ' + pct + '% (' + (e.loaded / 1048576).toFixed(1) + ' MB)';
+                }
+            });
+
+            xhr.addEventListener('load', function() {
+                try {
+                    var resp = JSON.parse(xhr.responseText);
+                    uploadFill.style.width = '100%';
+                    uploadText.textContent = '上传完成！';
+                    if (resp.status === 'ready') {
+                        historyData.unshift({
+                            job_id: resp.job_id, filename: resp.filename, name: resp.filename,
+                            size_mb: resp.size_mb, evtx_count: resp.evtx_count,
+                            total_files: 0, siolog: false, dump: false,
+                            os_type: resp.os_type || 'windows',
+                            sn: resp.sn || sn,
+                            created_at: new Date().toISOString()
+                        });
+                        renderHistory();
+                        setTimeout(function() {
+                            uploadProgress.style.display = 'none';
+                            uploadZone.style.display = 'block';
+                            uploadFill.style.width = '0%';
+                        }, 800);
+                    } else {
+                        showError(resp.error || '上传失败');
+                    }
+                } catch(e) {
+                    showError('服务器错误: ' + e.message);
+                }
+            });
+
+            xhr.addEventListener('error', function() {
+                showError('网络错误');
+            });
+
+            xhr.open('POST', 'api/upload');
+            xhr.send(formData);
+        }
+
+        function showError(msg) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = '❌ ' + msg;
+            uploadProgress.style.display = 'none';
+            uploadZone.style.display = 'block';
+            pendingFile = null;
+            fileInput.value = '';
+        }
+
+        function deleteJob(jobId, btn) {
+            if (!confirm('确定要删除此记录及所有关联文件吗？\n\n删除后无法恢复。')) return;
+            btn.disabled = true;
+            btn.textContent = '...';
+            var xhr = new XMLHttpRequest();
+            xhr.addEventListener('load', function() {
+                try {
+                    var data = JSON.parse(xhr.responseText);
+                    if (data.deleted) {
+                        historyData = historyData.filter(function(h) { return h.job_id !== jobId; });
+                        renderHistory();
+                    } else {
+                        alert('删除失败');
+                        btn.disabled = false;
+                        btn.textContent = '🗑';
+                    }
+                } catch(e) {
+                    alert('删除请求失败: ' + e.message);
+                    btn.disabled = false;
+                    btn.textContent = '🗑';
+                }
+            });
+            xhr.addEventListener('error', function() {
+                alert('删除请求失败: 网络错误');
+                btn.disabled = false;
+                btn.textContent = '🗑';
+            });
+            xhr.open('DELETE', 'api/job/' + jobId);
+            xhr.send();
+        }
+
+        console.log('✅ 页面初始化完成');
+    })();
+    </script>
+</body>
+</html>

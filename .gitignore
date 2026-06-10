@@ -1,0 +1,29 @@
+# Uploaded files (large)
+uploads/
+!uploads/.gitkeep
+
+# Reports (generated)
+reports/
+
+# Logs
+*.log
+nohup.out
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment
+hermes_queue/
