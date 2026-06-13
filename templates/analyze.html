@@ -146,6 +146,26 @@
         .other-chat .chat-msg pre { background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
         .other-chat .chat-msg ul, .other-chat .chat-msg ol { padding-left: 20px; margin: 4px 0; }
         .other-chat .chat-typing { color: #8b949e; font-size: 13px; padding: 6px 12px; }
+
+        /* === Dynamic file tabs === */
+        .file-tabs-sep { display: inline-block; width: 1px; height: 24px; background: #30363d; margin: 0 6px; align-self: center; flex-shrink: 0; }
+        .file-tab { display: inline-flex; align-items: center; gap: 4px; padding: 8px 10px 8px 14px; border-radius: 6px 6px 0 0; font-size: 13px; cursor: pointer; background: #21262d; color: #8b949e; border: 1px solid transparent; transition: all 0.15s; white-space: nowrap; max-width: 180px; flex-shrink: 0; }
+        .file-tab:hover { color: #c9d1d9; border-color: #30363d; }
+        .file-tab.active { background: #0d1117; color: #58a6ff; border-color: #1f6feb; border-bottom-color: #0d1117; font-weight: 600; }
+        .file-tab .ft-name { overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
+        .file-tab .ft-close { display: inline-block; width: 18px; height: 18px; line-height: 16px; text-align: center; border-radius: 3px; font-size: 12px; color: #484f58; cursor: pointer; flex-shrink: 0; }
+        .file-tab .ft-close:hover { color: #f85149; background: #490202; }
+        .file-tab.dirty .ft-name::after { content: ' ●'; color: #d29922; font-size: 8px; }
+        .tab-content.file-view { padding: 0; }
+        .file-view-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #161b22; border-bottom: 1px solid #21262d; font-size: 13px; color: #8b949e; }
+        .file-view-body { padding: 16px; overflow-y: auto; height: calc(100vh - 160px); }
+        .file-view-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; color: #c9d1d9; line-height: 1.5; margin: 0; }
+        .ai-tab-highlight { background: #1f6feb; color: #fff !important; border-color: #1f6feb; }
+        .ai-tab-highlight.active { background: #0d1117; color: #58a6ff !important; }
+        .tab-content.no-pad { padding: 0; }
+        .deep-tab.active { background: #0d1117; color: #bc8cff; border-color: #8957e5; border-bottom-color: #0d1117; font-weight: 600; }
+        .deep-tab:not(.active):hover { color: #bc8cff; border-color: #8957e5; }
+
     </style>
 </head>
 <body>
@@ -162,61 +182,44 @@
             </div>
         </div>
         <div class="main">
-            {% if os_type == 'other' %}
-            <!-- === BMC/Other: file-explorer + AI chat layout === -->
-            <div class="other-layout">
-                <div class="other-viewer" id="other-viewer">
-                    <div class="other-viewer-header">
-                        <span id="other-viewer-title">📄 文件内容查看器</span>
-                        <span style="font-size:12px;color:#484f58;" id="other-viewer-path"></span>
-                    </div>
-                    <div class="other-viewer-body" id="other-viewer-body">
-                        <div style="text-align:center;color:#8b949e;padding:60px 20px;">
-                            <div style="font-size:48px;margin-bottom:16px;">📂</div>
-                            <p style="font-size:16px;margin-bottom:8px;">选择左侧文件树中的文件以查看内容</p>
-                            <p style="font-size:13px;">或直接在下方 AI 对话框中提问</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="other-chat" id="other-chat">
-                    <div class="resize-handle" id="chat-resize-handle" title="拖动调整聊天区高度"></div>
-                    <div class="chat-container" id="chat-container">
-                        <div class="chat-messages" id="chat-messages">
-                            <div style="text-align:center;color:#8b949e;padding:40px 20px;">
-                                <div style="font-size:36px;margin-bottom:12px;">🤖</div>
-                                <p style="font-size:14px;">AI 日志分析助手</p>
-                                <p style="font-size:12px;">已加载所有文件内容，可以直接提问</p>
-                            </div>
-                        </div>
-                        <div class="chat-input-wrap">
-                            <div class="chat-mode-switch" id="chat-mode-switch">
-                                <span class="mode-pill active" data-mode="api" onclick="setChatMode('api')">🤖 AI 对话</span>
-                                <span class="mode-pill hermes" data-mode="hermes" onclick="setChatMode('hermes')">🔬 深度分析</span>
-                            </div>
-                            <textarea class="chat-input" id="chat-input" rows="2"
-                                placeholder="输入问题，按 Enter 发送..."
-                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();otherChatSend();}"></textarea>
-                            <button class="chat-send" id="chat-send-btn" onclick="otherChatSend()">发送</button>
-                        </div>
-                    </div>
+            {% if os_type in ('other', 'bmc') %}
+            <!-- === Other / BMC: file tabs + AI chat tabs === -->
+            <div class="tabs" id="tabs">
+                <span id="file-tabs"></span>
+                <div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
+                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>
+            </div>
+            <div class="tab-content" id="tab-content">
+                <div style="text-align:center;color:#8b949e;padding:60px 20px;">
+                    <div style="font-size:48px;margin-bottom:16px;">📂</div>
+                    <p style="font-size:16px;margin-bottom:8px;">选择左侧文件并点击文件名查看内容</p>
+                    <p style="font-size:13px;">或点击上方「🤖 AI 分析」开始对话</p>
                 </div>
             </div>
             {% else %}
             <!-- === Windows / Linux: tabbed analysis === -->
             <div class="tabs" id="tabs">
-                {% if os_type in ('linux', 'bmc') %}
+                {% if os_type == 'linux' %}
                 <div class="tab" data-type="linux_overview">📄 系统概览</div>
                 <div class="tab" data-type="linux_kernel">🔧 内核诊断</div>
                 <div class="tab" data-type="linux_syslog">📋 系统日志</div>
                 <div class="tab" data-type="linux_summary">📊 整体总结</div>
-                <div class="tab" data-type="chat">🤖 AI 分析</div>
+                <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
+                <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
+                <span id="file-tabs"></span>
+                <div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
+                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>
                 {% elif os_type == 'windows' %}
                 <div class="tab" data-type="overview">📄 系统概览</div>
                 <div class="tab" data-type="diagnostics">📋 系统诊断</div>
                 <div class="tab" data-type="dump">💾 Dump 分析</div>
                 <div class="tab" data-type="siolog">📋 SIOlog</div>
                 <div class="tab" data-type="summary">📊 整体总结</div>
-                <div class="tab" data-type="chat">🤖 AI 分析</div>
+                <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
+                <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
+                <span id="file-tabs"></span>
+                <div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
+                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>
                 {% endif %}
             </div>
             <div class="tab-content" id="tab-content">
@@ -241,11 +244,26 @@
         const jobId = '{{ job_id }}';
         document.getElementById('job-id-display').textContent = 'ID: ' + jobId;
         const osType = '{{ os_type }}';
-        const isOtherLayout = osType === 'other';
+        const isOtherLayout = osType === 'other' || osType === 'bmc';
         let currentType = isOtherLayout ? 'chat' : '{{ "linux_summary" if os_type in ("linux", "bmc") else "summary" }}';
+        // For other layout, activate AI tab by default
+        if (isOtherLayout) {
+            setTimeout(function() {
+                document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+                var aiTab = document.querySelector('.tab[data-type="chat"]');
+                if (aiTab) aiTab.classList.add('active');
+                renderChat('api');
+            }, 100);
+        }
         let analysisCache = {};
         // Chat mode: 'api' (DeepSeek) or 'hermes' (local agent bridge)
         let chatMode = 'api';
+        // Cache: preserve chat history across tab switches
+        const chatHistory = { api: null, hermes: null };
+        function saveChatState() {
+            var msgs = document.getElementById('chat-messages');
+            if (msgs) chatHistory[chatMode] = msgs.innerHTML;
+        }
         function setChatMode(mode) {
             chatMode = mode;
             document.querySelectorAll('#chat-mode-switch .mode-pill').forEach(function(el) {
@@ -272,7 +290,7 @@
             }
             var startTime = Date.now();
             var maxWait = 300000;
-            var quickWait = 60000;  // keep polling for 60s after quick result
+            var quickWait = 180000;  // keep polling for 3min after quick result (was 60s)
             var quickReceivedAt = 0;
             hermesPollTimer = setInterval(async function() {
                 try {
@@ -361,8 +379,8 @@
                         const clickable = readable || isDump;
                         const cls = clickable ? 'tree-file clickable' : 'tree-file';
                         const handler = isDump
-                            ? `onclick="event.stopPropagation();${isOtherLayout ? `openDumpInViewer('${escAttr(item.path)}','${escAttr(item.name)}')` : `openDumpDetail('${escAttr(item.path)}','${escAttr(item.name)}')`}"`
-                            : readable ? `onclick="event.stopPropagation();${isOtherLayout ? `openFileInViewer('${escAttr(item.path)}','${escAttr(item.name)}')` : `openFile('${escAttr(item.path)}','${escAttr(item.name)}')`}"` : '';
+                            ? `onclick="event.stopPropagation();openDumpDetail('${escAttr(item.path)}','${escAttr(item.name)}')"`
+                            : readable ? `onclick="event.stopPropagation();openFile('${escAttr(item.path)}','${escAttr(item.name)}')"` : '';
                         html += `<div class="${cls}"${handler ? ' ' + handler : ''}>`;
                         html += `<span>📄 ${esc(item.name)}</span>`;
                         html += `<span style="display:flex;align-items:center;gap:6px;">`;
@@ -398,16 +416,23 @@
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', function() {
                 const newType = this.dataset.type;
-                if (newType === currentType) return;
+                if (newType === currentType && !activeFileTab) return;
                 currentType = newType;
+                // Deactivate all tabs including file tabs
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.file-tab').forEach(t => t.classList.remove('active'));
+                activeFileTab = null;
                 this.classList.add('active');
+                tabContent.className = 'tab-content';
                 if (newType === 'chat') {
-                    renderChat();
+                    renderChat('api');
+                } else if (newType === 'chat-hermes') {
+                    renderChat('hermes');
                 } else {
-                    document.getElementById('tab-content').innerHTML = '<div class="loading"><div class="spinner"></div><p>分析中...</p></div>';
+                    saveChatState();
+                    tabContent.innerHTML = '<div class="loading"><div class="spinner"></div><p>分析中...</p></div>';
+                    runAnalysis(newType);
                 }
-                runAnalysis(newType);
             });
         });
         async function runAnalysis(type) {
@@ -838,7 +863,8 @@
             el.innerHTML = html;
         }
         // Initial load: show file tree, wait for user to click a tab
-        document.getElementById('loading').innerHTML = `
+        var loadingEl = document.getElementById('loading');
+        if (loadingEl) loadingEl.innerHTML = `
             <div style="text-align:center;padding:60px 20px;">
                 <div style="font-size:64px;margin-bottom:16px;">🔬</div>
                 <h2 style="color:#f0f6fc;font-size:20px;margin-bottom:8px;">文件已就绪</h2>
@@ -852,32 +878,130 @@
         function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
         function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         // File preview modal
+        // === Dynamic file tab system ===
+        const openFileTabs = {};  // path -> {el, name, content, meta}
+        const fileTabOrder = [];  // ordered list of paths
+        let activeFileTab = null;
+        const tabContent = document.getElementById('tab-content');
+        const fileTabsContainer = document.getElementById('file-tabs');
+        const fileTabsSep = document.getElementById('file-tabs-sep');
+
+        function activateAnalysisTab(type) {
+            Object.values(openFileTabs).forEach(function(t) { t.el.classList.remove('active'); });
+            activeFileTab = null;
+            document.getElementById('tab-content').className = 'tab-content';
+            switchAnalysisTab(type);
+        }
+        function switchAnalysisTab(type) {
+            document.querySelectorAll('#tabs > .tab').forEach(function(t) {
+                t.classList.toggle('active', t.dataset.type === type);
+            });
+            if (type === 'chat') {
+                renderChat('api');
+            } else if (type === 'chat-hermes') {
+                renderChat('hermes');
+            } else {
+                tabContent.innerHTML = '<div class="loading"><div class="spinner"></div><p>分析中...</p></div>';
+                runAnalysis(type);
+            }
+        }
+
         async function openFile(filePath, fileName) {
-            const modal = document.getElementById('file-modal');
-            document.getElementById('modal-title').textContent = '📄 ' + fileName;
-            document.getElementById('modal-meta').textContent = '加载中...';
-            document.getElementById('modal-content').textContent = '加载中...';
-            modal.classList.add('open');
+            // Check if tab already exists
+            if (openFileTabs[filePath]) {
+                focusFileTab(filePath);
+                return;
+            }
+            // Create new file tab
+            var tabEl = document.createElement('div');
+            tabEl.className = 'file-tab active';
+            tabEl.innerHTML = '<span class="ft-name">' + escHtml(fileName) + '</span><span class="ft-close" onclick="event.stopPropagation();closeFileTab(\'' + escAttr(filePath) + '\')">×</span>';
+            tabEl.onclick = function() { focusFileTab(filePath); };
+            fileTabsContainer.appendChild(tabEl);
+            if (fileTabsSep) fileTabsSep.style.display = 'inline-block';
+
+            // Deactivate previous tabs
+            Object.values(openFileTabs).forEach(function(t) { t.el.classList.remove('active'); });
+            document.querySelectorAll('#tabs > .tab').forEach(function(t) { t.classList.remove('active'); });
+            activeFileTab = filePath;
+
+            // Store
+            openFileTabs[filePath] = { el: tabEl, name: fileName, content: null, meta: null };
+            fileTabOrder.push(filePath);
+
+            // Save chat state before switching to file view
+            saveChatState();
+            // Show loading in tab content
+            tabContent.className = 'tab-content file-view no-pad';
+            tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(fileName) + '</span><span style="color:#484f58;">加载中...</span></div><div class="file-view-body"><pre>加载中...</pre></div>';
+
+            // Fetch file content
             try {
-                const resp = await fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(filePath));
-                const data = await resp.json();
+                var resp = await fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(filePath));
+                var data = await resp.json();
                 if (data.error) {
-                    document.getElementById('modal-content').textContent = '❌ ' + data.error;
-                    document.getElementById('modal-meta').textContent = '';
+                    tabContent.querySelector('pre').textContent = '❌ ' + data.error;
                 } else {
-                    let metaText = (data.size/1024).toFixed(1) + ' KB | 编码: ' + (data.encoding || '?') + ' | ' + filePath;
+                    var metaText = (data.size/1024).toFixed(1) + ' KB | 编码: ' + (data.encoding || '?') + ' | ' + filePath;
                     if (data.truncated) metaText += ' | ⚠️ ' + data.truncated_note;
-                    document.getElementById('modal-meta').textContent = metaText;
-                    document.getElementById('modal-content').textContent = data.content;
+                    tabContent.querySelector('.file-view-header span:last-child').textContent = metaText;
+                    tabContent.querySelector('pre').textContent = data.content;
+                    openFileTabs[filePath].content = data.content;
+                    openFileTabs[filePath].meta = metaText;
                 }
             } catch (err) {
-                document.getElementById('modal-content').textContent = '❌ 加载失败: ' + err.message;
+                tabContent.querySelector('pre').textContent = '❌ 加载失败: ' + err.message;
+            }
+        }
+
+        function focusFileTab(filePath) {
+            var t = openFileTabs[filePath];
+            if (!t) return;
+            // Deactivate all
+            Object.values(openFileTabs).forEach(function(ft) { ft.el.classList.remove('active'); });
+            document.querySelectorAll('#tabs > .tab').forEach(function(ft) { ft.classList.remove('active'); });
+            // Activate this one
+            t.el.classList.add('active');
+            activeFileTab = filePath;
+            // Save chat state before switching to file view
+            saveChatState();
+            // Render content
+            tabContent.className = 'tab-content file-view no-pad';
+            if (t.content !== null) {
+                tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(t.name) + '</span><span style="color:#484f58;">' + (t.meta || '') + '</span></div><div class="file-view-body"><pre>' + escHtml(t.content) + '</pre></div>';
+            } else {
+                tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(t.name) + '</span></div><div class="file-view-body"><pre>加载中...</pre></div>';
+            }
+        }
+
+        function closeFileTab(filePath) {
+            var t = openFileTabs[filePath];
+            if (!t) return;
+            // Remove from DOM
+            if (t.el.parentNode) t.el.remove();
+            var wasActive = (activeFileTab === filePath);
+            // Remove from tracking
+            delete openFileTabs[filePath];
+            var idx = fileTabOrder.indexOf(filePath);
+            if (idx >= 0) fileTabOrder.splice(idx, 1);
+            // Hide separator if no file tabs left
+            if (fileTabOrder.length === 0) {
+                if (fileTabsSep) fileTabsSep.style.display = 'none';
+            }
+            // Switch to nearest tab or AI tab
+            if (wasActive) {
+                if (fileTabOrder.length > 0) {
+                    focusFileTab(fileTabOrder[fileTabOrder.length - 1]);
+                } else {
+                    activateAnalysisTab('chat');
+                }
             }
         }
         function closeFileModal() {
+            // Keep for backward compat (dump viewer still uses modal)
             document.getElementById('file-modal').classList.remove('open');
         }
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFileModal(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeFileModal(); } });
         // Dump file detail viewer
         async function openDumpDetail(filePath, fileName) {
             const modal = document.getElementById('file-modal');
@@ -1001,31 +1125,28 @@
             el.innerHTML = html;
         }
         // ═══ Chat functions ═══
-        function renderChat() {
-            document.getElementById('page-title').textContent = '🤖 AI 分析对话';
+        function renderChat(mode) { mode = mode || 'api';
+            // Save current chat before switching away
+            saveChatState();
+            document.getElementById('page-title').textContent = (mode === 'hermes' ? '🔬 深度分析' : '🤖 AI 分析');
             const el = document.getElementById('tab-content');
             el.innerHTML = `
                 <div class="chat-container">
                     <div class="chat-messages" id="chat-messages">
-                        <div class="chat-msg assistant" style="font-size:14px;">
-                            <p>👋 你好！我是诊断助手，可以帮你分析这个日志包。</p>
-                            <p style="color:#8b949e;font-size:12px;margin-top:4px;">试试问我：<br>
-                            • 这台机器有什么严重问题？<br>
-                            • 频繁意外断电的原因？<br>
-                            • 帮我看看硬盘健康状态<br>
-                            • 蓝屏 dump 详细分析</p>
-                        </div>
                     </div>
                     <div class="chat-input-wrap">
-                        <div class="chat-mode-switch" id="chat-mode-switch">
-                            <span class="mode-pill active" data-mode="api" onclick="setChatMode('api')">🤖 AI 对话</span>
-                            <span class="mode-pill hermes" data-mode="hermes" onclick="setChatMode('hermes')">🔬 深度分析</span>
-                        </div>
                         <input class="chat-input" id="chat-input" placeholder="输入你的问题..." onkeydown="onChatKey(event)">
                         <button class="chat-send" id="chat-send-btn" onclick="chatSend()">发送</button>
                     </div>
                 </div>`;
+            // Restore history or show welcome
+            if (chatHistory[mode]) {
+                document.getElementById('chat-messages').innerHTML = chatHistory[mode];
+            } else {
+                document.getElementById('chat-messages').innerHTML = '<div class="chat-msg assistant" style="font-size:14px;"><p>👋 你好！我是诊断助手，可以帮你分析这个日志包。</p><p style="color:#8b949e;font-size:12px;margin-top:4px;">试试问我：<br>• 这台机器有什么严重问题？<br>• 频繁意外断电的原因？<br>• 帮我看看硬盘健康状态</p></div>';
+            }
             document.getElementById('chat-input').focus();
+            setChatMode(mode);
         }
         function onChatKey(e) {
             if (e.key === 'Enter' && !e.shiftKey) {

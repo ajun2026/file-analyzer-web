@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from collections import Counter
 import json, re, os
 from analyzers.dump_parser import parse_single_dump, get_bugcheck_info
-from detectors import detect_encoding, iter_evtx, CHINA_TZ, REPORT_DIR
+from detectors import detect_encoding, iter_evtx_cached, CHINA_TZ, REPORT_DIR
 
 def analyze_overview(tslog: Path) -> dict:
     """📊 系统概览：结构化提取硬件/OS/软件信息"""
@@ -177,7 +177,7 @@ def analyze_reboot(tslog: Path) -> dict:
     events_6008 = []
     all_found = []
 
-    for eid, lvl, ts, prov, root in iter_evtx(system_evtx):
+    for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx):
         if eid not in REBOOT_IDS:
             continue
         entry = {"id": eid, "time": ts, "level": lvl,
@@ -206,7 +206,7 @@ def analyze_hardware(tslog: Path) -> dict:
     lke_events = []
     if app_evtx.exists():
         import re
-        for eid, lvl, ts, prov, root in iter_evtx(app_evtx):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(app_evtx):
             if eid != 1001:
                 continue
             data_items = root.findall('.//{http://schemas.microsoft.com/win/2004/08/events/event}Data')
@@ -261,7 +261,7 @@ def analyze_events(tslog: Path) -> dict:
         counter = Counter()
         errors = []
         total = 0
-        for eid, lvl, ts, prov, root in iter_evtx(logpath, max_events=1000):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(logpath, max_events=1000):
             total += 1
             counter[eid] += 1
             if lvl <= 2 and len(errors) < 50 and root is not None:
@@ -345,7 +345,7 @@ def analyze_system_diagnostics(tslog: Path) -> dict:
         recent_installs = []  # [(time, event_id, desc)]
         crash_events = []     # [(time, event_id, desc)]
 
-        for eid, lvl, ts, prov, root in iter_evtx(system_evtx, max_events=5000):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx, max_events=5000):
             syst_total += 1
             syst_dist[eid] += 1
 
@@ -438,7 +438,7 @@ def analyze_system_diagnostics(tslog: Path) -> dict:
 
     # ═══ Pass 2: Application.evtx ═══
     if app_evtx.exists():
-        for eid, lvl, ts, prov, root in iter_evtx(app_evtx, max_events=2000):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(app_evtx, max_events=2000):
             app_total += 1
             app_dist[eid] += 1
             # LiveKernelEvent extraction
@@ -640,7 +640,7 @@ def analyze_dump(tslog: Path) -> dict:
     if evtx_dir.is_dir():
         system_evtx = evtx_dir / "System.evtx"
         if system_evtx.exists():
-            for eid, lvl, ts, prov, root in iter_evtx(system_evtx, max_events=2000):
+            for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx, max_events=2000):
                 if eid != 1001:
                     continue
                 evt = {"time": ts, "provider": prov}

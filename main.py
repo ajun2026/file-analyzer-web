@@ -9,8 +9,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 import jinja2, aiofiles, httpx
 
 from detectors import (load_history, save_history, add_to_history,
-    detect_encoding, extract_archive, find_log_dir, normalize_log_structure,
-    find_tslog_dir, iter_evtx, MAX_EVENTS, UPLOAD_DIR, REPORT_DIR, BASE_DIR)
+    detect_encoding, extract_archive, extract_zip_safe, find_log_dir,
+    normalize_log_structure,
+    find_tslog_dir, iter_evtx_cached, MAX_EVENTS, UPLOAD_DIR, REPORT_DIR, BASE_DIR)
 from analyzers.windows import (analyze_overview, analyze_system_diagnostics,
     analyze_dump, analyze_siolog, analyze_summary)
 from analyzers.linux import (analyze_linux_overview, analyze_linux_kernel,
@@ -335,18 +336,53 @@ async def upload_file(file: UploadFile = File(...), sn: str = Form("")):
     extract_dir = extract_archive(filepath)
     tslog, os_type = find_log_dir(extract_dir)
     
-    # Auto handle double-compressed archives (e.g. .tar.gz containing .tzz)
-    if os_type == "unknown" and not tslog:
-        inner_tzz = list(extract_dir.glob("*.tzz"))
-        if inner_tzz:
-            inner_path = inner_tzz[0]
-            inner_extract = extract_dir / "extracted"
+    # Auto handle double-compressed / nested archives
+    # (e.g. .tar.gz containing .tzz, .zip containing .tar.gz or .zip)
+    #
+    # Also fire for Linux when the tslog has no standard English-named log files
+    # — happens with UOS/Deepin log collection tools that name files in Chinese.
+    _need_nested = os_type in ("unknown", "other")
+    if os_type == "linux" and tslog:
+        STD_MARKERS = ['syslog', 'kern.log', 'messages', 'dmesg', 'auth.log']
+        _has_std = any(
+            any(m.lower() in f.name.lower() for f in tslog.iterdir() if f.is_file())
+            for m in STD_MARKERS
+        )
+        if not _has_std:
+            _need_nested = True
+
+    if _need_nested:
+        inner_archives = []
+        for pat in ["*.tzz", "*.zip", "*.tar.gz", "*.tgz"]:
+            inner_archives.extend(extract_dir.rglob(pat))
+        if inner_archives:
+            # Pick the most promising one (prefer zip/tar.gz with log markers)
+            inner_path = inner_archives[0]
+            inner_extract = extract_dir / "_nested"
             inner_extract.mkdir(exist_ok=True)
-            subprocess.run(['tar', '--lzop', '-xf', str(inner_path), '-C', str(inner_extract)],
-                           capture_output=True, timeout=300)
-            tslog2, os_type2 = find_log_dir(inner_extract)
-            if tslog2:
-                tslog, os_type = tslog2, os_type2
+            inner_ext = ''.join(Path(str(inner_path)).suffixes).lower()
+            try:
+                if inner_ext in ('.zip',):
+                    extract_zip_safe(inner_path, inner_extract)
+                elif inner_ext in ('.tzz', '.tar.gz', '.tgz', '.tar'):
+                    subprocess.run(['tar', 'xf', str(inner_path), '-C', str(inner_extract)],
+                                   capture_output=True, timeout=300)
+                elif inner_ext == '.7z':
+                    subprocess.run(['7z', 'x', '-y', str(inner_path), f'-o{inner_extract}'],
+                                   capture_output=True, timeout=300)
+                elif inner_ext == '.rar':
+                    subprocess.run(['unrar', 'x', '-y', str(inner_path), str(inner_extract)],
+                                   capture_output=True, timeout=300)
+                # Fix permissions from inner extraction
+                subprocess.run(['find', str(inner_extract), '-type', 'd', '-exec', 'chmod', '755', '{}', '+'],
+                               capture_output=True)
+                subprocess.run(['find', str(inner_extract), '-type', 'f', '-exec', 'chmod', '644', '{}', '+'],
+                               capture_output=True)
+                tslog2, os_type2 = find_log_dir(inner_extract)
+                if tslog2 and os_type2 != "unknown":
+                    tslog, os_type = tslog2, os_type2
+            except Exception:
+                pass
     
     tslog_path = str(tslog) if tslog else None
     
@@ -548,7 +584,13 @@ HERMES_LOCK = HERMES_QUEUE / ".processing_lock"
 
 
 def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
-    """Process a deep analysis request immediately in background."""
+    """Process a deep analysis request immediately in background.
+    
+    Two jobs:
+    1. Write QUICK result (fast regex/extraction for instant feedback)
+    2. Write preprocessed context to pending payload (so Hermes Agent can read
+       plain-text data instead of struggling with binary .evtx files)
+    """
     import subprocess
     try:
         # Simple lock: only one processing at a time
@@ -568,6 +610,7 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
             want_overview = not (want_dump or want_disk or want_error) or want_error
 
             reply_parts = []
+            context_parts = []  # Preprocessed data for Hermes Agent
 
             # ── System overview ──
             if want_overview or want_error:
@@ -590,6 +633,15 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
                     if overview:
                         reply_parts.append("## 📋 系统概览\n" + "\n".join(f"- {o}" for o in overview))
 
+                # Preprocess: full system info as plain text
+                ctx_sys = []
+                if systeminfo:
+                    ctx_sys.append("=== SYSTEMINFO.TXT (完整) ===\n" + systeminfo[:10000])
+                if dxdiag:
+                    ctx_sys.append("=== DXDIA.TXT (前5000字符) ===\n" + dxdiag[:5000])
+                if ctx_sys:
+                    context_parts.append("\n\n".join(ctx_sys))
+
             # ── Crash/Dump analysis ──
             if want_dump or want_error:
                 dumps = list((tslog / "osdump").glob("*.dmp")) if (tslog / "osdump").is_dir() else []
@@ -601,7 +653,7 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
                 bugcheck_code = ""
                 if system_evtx.exists():
                     try:
-                        for eid, level, ts_str, prov, root in iter_evtx(system_evtx, max_events=3000):
+                        for eid, level, ts_str, prov, root in iter_evtx_cached(system_evtx, max_events=3000):
                             if eid == 1001:  # BugCheck
                                 for child in root.iter():
                                     if child.tag.endswith('}Data') and child.get('Name') == 'param1':
@@ -650,12 +702,19 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
 
                     reply_parts.append("\n".join(dump_section))
 
+                # Preprocess: parsed evtx events as text
+                ctx_evtx = []
+                if crash_events:
+                    ctx_evtx.append("=== EVTX 崩溃事件（已解析）===")
+                    for i, ce in enumerate(crash_events[:30]):
+                        ctx_evtx.append(f"  [{i+1}] {ce['time']} | type={ce['type']} | code={ce['code']}")
+                    context_parts.append("\n".join(ctx_evtx))
+
             # ── Disk/SMART analysis ──
             if want_disk or want_error:
                 smart = _find_read_file(tslog, ["SMARTINFO.txt", "smartinfo*", "SMART*"])
                 if smart:
                     disk_issues = []
-                    # Check for bad sectors
                     pending = re.findall(r'Current_Pending_Sector\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)', smart)
                     uncorrect = re.findall(r'Offline_Uncorrectable\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)', smart)
                     ata_errs = re.findall(r'ATA Error Count.*?(\d+)', smart)
@@ -670,13 +729,15 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
                     if any(int(v) > 0 for v in ata_errs):
                         disk_issues.append(f"🟡 **ATA 错误**: {', '.join(ata_errs)} 次")
 
-                    # Uncountable shutdowns from NVMe
                     unsafe = re.findall(r'Unsafe Shutdowns:\s+(\d+)', smart)
                     if unsafe and any(int(v) > 100 for v in unsafe):
                         disk_issues.append(f"⚠️ **异常断电次数**: {max(int(v) for v in unsafe)} 次")
 
                     if disk_issues:
                         reply_parts.append("## 💾 磁盘健康\n" + "\n".join(f"- {d}" for d in disk_issues))
+
+                    # Preprocess: full SMART data as text
+                    context_parts.append("=== SMARTINFO.TXT (完整) ===\n" + smart[:10000])
 
             # ── Event log errors ──
             if want_error:
@@ -685,7 +746,7 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
                     try:
                         err_count = {"Critical": 0, "Error": 0, "Warning": 0}
                         levels = {1: "Critical", 2: "Error", 3: "Warning"}
-                        for eid, level, ts_str, prov, root in iter_evtx(system_evtx, max_events=5000):
+                        for eid, level, ts_str, prov, root in iter_evtx_cached(system_evtx, max_events=5000):
                             if level in levels:
                                 err_count[levels[level]] += 1
                         if err_count["Error"] + err_count["Critical"] > 0:
@@ -697,14 +758,49 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
                     except Exception:
                         pass
 
+            # ── Preprocess: key log files as plain text ──
+            # Always add a file manifest + key text file previews
+            ctx_files = ["=== 文件清单 ==="]
+            text_exts = {'.txt', '.log', '.csv', '.xml', '.ini', '.cfg', '.inf', '.rom'}
+            file_count = 0
+            for f in sorted(tslog.rglob("*")):
+                if f.is_file() and file_count < 80:
+                    size_kb = f.stat().st_size / 1024
+                    rel = str(f.relative_to(tslog))
+                    ctx_files.append(f"  {rel} ({size_kb:.1f} KB)")
+                    file_count += 1
+                    # Auto-read small text files
+                    if f.suffix.lower() in text_exts and size_kb < 200:
+                        try:
+                            content = f.read_text(encoding='utf-8', errors='replace')[:5000]
+                            ctx_files.append(f"\n--- {rel} 内容预览 ---\n{content}\n")
+                        except Exception:
+                            pass
+            context_parts.append("\n".join(ctx_files))
+
+            # ── Write preprocessed context to HERMES_CONTEXT directory ──
+            HERMES_CONTEXT = HERMES_QUEUE / "context"
+            HERMES_CONTEXT.mkdir(parents=True, exist_ok=True)
+            context_text = "\n\n".join(context_parts) if context_parts else ""
+            if context_text:
+                ctx_file = HERMES_CONTEXT / f"{request_id}.txt"
+                ctx_file.write_text(context_text, encoding='utf-8')
+                # Update the pending payload with context file path
+                payload["preprocessed_context"] = str(ctx_file)
+
             # Determine if this is a complex question that needs AI
             complex_keywords = ["详细", "整体", "全部", "所有", "关联", "分析", "深入", "全面", "综合", "总结"]
             is_complex = any(w in message for w in complex_keywords)
 
             # ── Compile final reply ──
             if is_complex:
-                # Complex questions: don't write quick result, let AI handle it
-                reply = None  # signal: skip quick, wait for AI
+                # Always show quick result even for complex queries,
+                # so the user sees immediate feedback while deep analysis runs.
+                if reply_parts:
+                    reply = "\n\n".join(reply_parts)
+                    reply += "\n\n---\n> ⏳ **深度分析进行中**，Hermes Agent 正在详细分析所有日志文件，结果将自动更新..."
+                else:
+                    reply = "🔍 Hermes Agent 正在进行深度诊断分析，请稍候..."
             elif reply_parts:
                 reply = "\n\n".join(reply_parts)
                 reply += "\n\n---\n> 💡 快速诊断中，AI 深度分析正在后台处理，结果将自动更新..."
@@ -718,8 +814,20 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
                 with open(quick_file, "w", encoding="utf-8") as f:
                     json.dump({"request_id": request_id, "reply": reply}, f, ensure_ascii=False, indent=2)
 
+            # Update pending file with preprocessed context path
+            if context_text:
+                pending_file = HERMES_PENDING / f"{request_id}.json"
+                if pending_file.exists():
+                    try:
+                        with open(pending_file, "r", encoding="utf-8") as f:
+                            p = json.load(f)
+                        p["preprocessed_context"] = str(ctx_file)
+                        with open(pending_file, "w", encoding="utf-8") as f:
+                            json.dump(p, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+
         finally:
-            # Clean up lock, but do NOT delete pending — cron still needs it
             if lock_file.exists():
                 lock_file.unlink()
 

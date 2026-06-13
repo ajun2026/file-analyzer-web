@@ -1,9 +1,9 @@
 """Function Calling chat for Windows/Linux."""
-import json, httpx
+import json, httpx, asyncio
 from pathlib import Path
 from typing import Optional
 from fastapi.responses import JSONResponse
-from detectors import detect_encoding
+from detectors import detect_encoding, iter_evtx_cached
 from analyzers.dump_parser import parse_single_dump
 
 DEEPSEEK_API_KEY = "sk-96ebbb3ccd854d41b86e6599b56e8e28"
@@ -168,7 +168,7 @@ def _execute_tool(job_id: str, tool_name: str, arguments: dict) -> str:
 
             results = []
             count = 0
-            for eid, lvl, ts, prov, root in iter_evtx(evtx_path, max_events=500):
+            for eid, lvl, ts, prov, root in iter_evtx_cached(evtx_path, max_events=500):
                 if event_id and eid != event_id:
                     continue
                 if not event_id and lvl > 3:
@@ -381,11 +381,11 @@ async def _chat_function_calling(job_id: str, user_message: str, tslog):
                     asst_msg["content"] = msg["content"]
                 messages.append(asst_msg)
 
-                # Execute each tool
+                # Execute each tool in thread pool to avoid blocking event loop
                 for tc in msg["tool_calls"]:
                     func = tc["function"]
-                    tool_result = _execute_tool(job_id, func["name"],
-                                                json.loads(func["arguments"]) if isinstance(func["arguments"], str) else func["arguments"])
+                    args = json.loads(func["arguments"]) if isinstance(func["arguments"], str) else func["arguments"]
+                    tool_result = await asyncio.to_thread(_execute_tool, job_id, func["name"], args)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
