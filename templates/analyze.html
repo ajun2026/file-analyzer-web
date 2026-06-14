@@ -836,6 +836,14 @@
                 html += `<div class="stat-box"><div class="number" style="font-size:16px;">${esc(v||'?')}</div><div class="label">${label}</div></div>`;
             }
             html += '</div></div>';
+            // Official code lookup reference
+            html += `<div class="card" style="background:#0d1117;border:1px solid #30363d;">
+                <p style="margin:0;font-size:13px;color:#8b949e;">
+                    💡 如需查询 SIO 事件代码的官方完整说明，请访问
+                    <a href="https://www.thinkworkstationsoftware.com/codes" target="_blank" rel="noopener"
+                       style="color:#58a6ff;">thinkworkstationsoftware.com/codes</a>
+                </p>
+            </div>`;
             // Issues
             const issues = data.issue_events || [];
             if (issues.length > 0) {

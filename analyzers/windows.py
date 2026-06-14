@@ -6,6 +6,24 @@ import json, re, os
 from analyzers.dump_parser import parse_single_dump, get_bugcheck_info
 from detectors import detect_encoding, iter_evtx_cached, CHINA_TZ, REPORT_DIR
 
+# ── LiveKernelEvent codes ──
+LKE_CODES = {
+    "0x117": "VIDEO_TDR_TIMEOUT_DETECTED (显卡超时)",
+    "0x141": "VIDEO_ENGINE_TIMEOUT_DETECTED (显卡引擎超时)",
+    "0x116": "VIDEO_TDR_FAILURE (显卡TDR失败)",
+    "0x119": "VIDEO_SCHEDULER_INTERNAL_ERROR (显卡调度错误)",
+    "0x144": "BUGCODE_USB3_DRIVER (USB3驱动错误)",
+    "0x124": "WHEA_UNCORRECTABLE_ERROR (硬件错误)",
+    "0x9F":  "DRIVER_POWER_STATE_FAILURE (驱动电源)",
+    "0x133": "DPC_WATCHDOG_VIOLATION (DPC超时)",
+    "0x1A":  "MEMORY_MANAGEMENT (内存管理)",
+    "0x50":  "PAGE_FAULT_IN_NONPAGED_AREA (页面错误)",
+    "0x3B":  "SYSTEM_SERVICE_EXCEPTION (系统服务异常)",
+    "0x1E":  "KMODE_EXCEPTION_NOT_HANDLED (内核异常)",
+    "0xD1":  "DRIVER_IRQL_NOT_LESS_OR_EQUAL (驱动IRQL)",
+    "0xEF":  "CRITICAL_PROCESS_DIED (关键进程终止)",
+}
+
 def analyze_overview(tslog: Path) -> dict:
     """📊 系统概览：结构化提取硬件/OS/软件信息"""
     import re
@@ -261,7 +279,7 @@ def analyze_events(tslog: Path) -> dict:
         counter = Counter()
         errors = []
         total = 0
-        for eid, lvl, ts, prov, root in iter_evtx_cached(logpath, max_events=1000):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(logpath, ):
             total += 1
             counter[eid] += 1
             if lvl <= 2 and len(errors) < 50 and root is not None:
@@ -305,15 +323,21 @@ def analyze_system_diagnostics(tslog: Path) -> dict:
     app_evtx = evtx_dir / "Application.evtx"
 
     # ── 硬件错误事件 ID 定义 ──
+    # Provider-scoped: all IDs here are from System log providers
+    # WHEA-Logger: 1 (fatal), 17 (uncorrected), 18 (corrected)
+    # volmgr: 46 (crash dump init failure), 161 (dump creation failure)
+    # NIC drivers: 14 (aqnic650, e1dexpress, etc. — network adapter errors)
     HW_ERROR_IDS = {
-        7:   "磁盘坏块", 11: "磁盘控制器错误",
-        15:  "磁盘未就绪", 17: "WHEA 硬件错误",
-        18:  "WHEA 已纠正错误", 19: "Windows Update",
-        20:  "Windows Update 安装失败", 51: "磁盘分页错误",
+        1:   "WHEA 致命硬件错误", 7: "磁盘坏块",
+        11:  "磁盘控制器错误", 14: "网卡硬件错误",
+        15:  "磁盘未就绪", 16: "USB/蓝牙硬件错误",
+        17:  "WHEA 硬件错误", 18: "WHEA 已纠正错误",
+        46:  "崩溃转储初始化失败", 51: "磁盘分页错误",
         52:  "磁盘自检 (SMART) 警告", 55: "NTFS 结构损坏",
         137: "内核电源错误", 153: "磁盘控制器重试",
-        157: "磁盘意外移除", 219: "驱动加载失败",
-        220: "驱动启动失败",
+        157: "磁盘意外移除", 158: "磁盘错误",
+        161: "转储创建过程失败",
+        219: "驱动加载失败", 220: "驱动启动失败",
     }
 
     # ── 重启/关机事件 MS 官方标准 ──
@@ -345,7 +369,7 @@ def analyze_system_diagnostics(tslog: Path) -> dict:
         recent_installs = []  # [(time, event_id, desc)]
         crash_events = []     # [(time, event_id, desc)]
 
-        for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx, max_events=5000):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx):
             syst_total += 1
             syst_dist[eid] += 1
 
@@ -357,8 +381,8 @@ def analyze_system_diagnostics(tslog: Path) -> dict:
                     for d in root.findall('.//{http://schemas.microsoft.com/win/2004/08/events/event}Data'):
                         if d.text and d.text.strip() and len(entry['details']) < 4:
                             entry['details'].append(d.text.strip()[:150])
-                # Only keep severity 1-2 errors; level 3 as warnings
-                if lvl <= 2 or eid in (55, 153, 7, 51):  # always record disk errors
+                # Only keep severity 1-2 errors; always record disk/WHEA/dump/NIC warnings
+                if lvl <= 2 or eid in (55, 153, 7, 51, 17, 18, 1, 46, 158, 161, 14, 16):
                     hardware_errors.append(entry)
 
             # ── Restart / shutdown events ──
@@ -438,7 +462,7 @@ def analyze_system_diagnostics(tslog: Path) -> dict:
 
     # ═══ Pass 2: Application.evtx ═══
     if app_evtx.exists():
-        for eid, lvl, ts, prov, root in iter_evtx_cached(app_evtx, max_events=2000):
+        for eid, lvl, ts, prov, root in iter_evtx_cached(app_evtx, ):
             app_total += 1
             app_dist[eid] += 1
             # LiveKernelEvent extraction
@@ -640,7 +664,7 @@ def analyze_dump(tslog: Path) -> dict:
     if evtx_dir.is_dir():
         system_evtx = evtx_dir / "System.evtx"
         if system_evtx.exists():
-            for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx, max_events=2000):
+            for eid, lvl, ts, prov, root in iter_evtx_cached(system_evtx, ):
                 if eid != 1001:
                     continue
                 evt = {"time": ts, "provider": prov}
@@ -822,8 +846,78 @@ def analyze_dump(tslog: Path) -> dict:
 
 
 def analyze_siolog(tslog: Path) -> dict:
-    """📋 SIOlog 分析：解析 Lenovo SIO_Events.log"""
+    """📋 SIOlog 分析：解析 Lenovo SIO_Events.log
+    
+    SIO/EC 事件代码参考：https://www.thinkworkstationsoftware.com/codes
+    """
     import re
+    from collections import Counter
+    
+    # ── SIO 事件代码映射 ──
+    # 来源: Lenovo ThinkStation SIO/EC 规范 + thinkworkstationsoftware.com
+    SIO_CODES = {
+        # ── Normal ──
+        "N000": ("Normal", "正常启动，无异常"),
+        
+        # ── Power & Voltages ──
+        "N001": ("AC Power", "交流电源断电"),
+        "N002": ("System Voltages & Power", "系统电压异常 / 电源故障"),
+        "N003": ("System Voltages & Power", "系统欠压 / Brownout"),
+        "N004": ("System Voltages & Power", "电源适配器功率不足"),
+        "N005": ("System Voltages & Power", "电池/CMOS 电压低"),
+        
+        # ── Thermal ──
+        "N010": ("Thermal", "CPU 过热保护触发"),
+        "N011": ("Thermal", "系统温度过高"),
+        "N012": ("Thermal", "显卡过热保护触发"),
+        "N013": ("Thermal", "VRM/VR 过热"),
+        
+        # ── Fan ──
+        "N020": ("Fan", "CPU 风扇故障"),
+        "N021": ("Fan", "系统风扇 1 故障"),
+        "N022": ("Fan", "系统风扇 2 故障"),
+        "N023": ("Fan", "电源风扇故障"),
+        "N024": ("Fan", "显卡风扇故障"),
+        
+        # ── Chassis / Security ──
+        "C000": ("System Voltages & Power", "机箱盖被打开 (Chassis Intrusion)"),
+        "C001": ("System Voltages & Power", "前置面板被移除"),
+        "C002": ("System Voltages & Power", "PCIe 挡板被移除"),
+        "C003": ("System Voltages & Power", "内存盖板被打开"),
+        
+        # ── Hardware / POST ──
+        "H000": ("Hardware", "POST 自检失败"),
+        "H001": ("Hardware", "内存 SPD 读取失败"),
+        "H002": ("Hardware", "CPU 初始化失败"),
+        "H003": ("Hardware", "芯片组初始化失败"),
+        "H004": ("Hardware", "PCIe 设备枚举失败"),
+        "H005": ("Hardware", "SuperIO 通信失败"),
+        
+        # ── Boot ──
+        "B000": ("Boot", "未找到引导设备"),
+        "B001": ("Boot", "引导设备读取失败"),
+        "B002": ("Boot", "PXE 网络引导失败"),
+        
+        # ── Unknown / Corrupted ──
+        "XXXX": ("Unknown", "事件数据损坏 (全 FF)"),
+    }
+    
+    # Data byte interpretation helpers
+    def _parse_data(data_str):
+        """Parse hex data string into list of ints."""
+        try:
+            return [int(b, 16) for b in data_str.split()]
+        except (ValueError, AttributeError):
+            return []
+    
+    def _describe_data(code, data_bytes):
+        """Generate human-readable description of event data bytes."""
+        if not data_bytes or all(b == 0 for b in data_bytes):
+            return ""
+        if all(b == 0xFF for b in data_bytes):
+            return "数据区全部为 0xFF（可能损坏）"
+        return f"0x{' '.join(f'{b:02X}' for b in data_bytes[:6])}"
+    
     siolog_path = tslog / "SIO_Events.log"
     if not siolog_path.exists():
         return {"title": "📋 SIOlog 分析", "found": False,
@@ -851,29 +945,86 @@ def analyze_siolog(tslog: Path) -> dict:
         if m:
             info[field] = m.group(1).strip()
 
-    # Parse events: EventNNN: YYYY/MM/DD HH:MM:SS  NXXX XX XX XX XX XX XX
+    # Parse events: match any event code (Nxxx/Cxxx/Hxxx/Bxxx/XXXX)
     events = []
-    event_codes = set()
-    for m in re.finditer(r'Event(\d{3}): (\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})\s+(N\d{3})\s+([0-9A-Fa-f ]+)', content):
+    code_counter = Counter()
+    
+    # Pass 1: standard format with valid dates
+    for m in re.finditer(
+        r'Event(\d{3}): (\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})\s+([A-Z]\d{3}|XXXX)\s+([0-9A-Fa-f ]+)',
+        content
+    ):
         idx, ts, code, data = m.group(1), m.group(2), m.group(3), m.group(4).strip()
-        events.append({"index": int(idx), "time": ts, "code": code, "data": data})
-        event_codes.add(code)
+        code_info = SIO_CODES.get(code, ("Unknown", f"未知事件代码: {code}"))
+        data_bytes = _parse_data(data)
+        events.append({
+            "index": int(idx),
+            "time": ts,
+            "code": code,
+            "category": code_info[0],
+            "description": code_info[1],
+            "data_desc": _describe_data(code, data_bytes),
+            "data_raw": data,
+        })
+        code_counter[code] += 1
+    
+    # Pass 2: corrupted entries (XXXX with FF/FF dates — data corruption)
+    # These have invalid timestamps like "2255/FF/FF FF:FF:FF"
+    for m in re.finditer(
+        r'Event(\d{3}): (\d{4}/[0-9A-Fa-f]{2}/[0-9A-Fa-f]{2} [0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\s+XXXX\s+([0-9A-Fa-f ]+)',
+        content
+    ):
+        idx, ts, data = m.group(1), m.group(2), m.group(3).strip()
+        # Skip if already captured in pass 1
+        if any(e['index'] == int(idx) for e in events):
+            continue
+        code_info = SIO_CODES.get("XXXX", ("Unknown", "事件数据损坏 (全 FF)"))
+        data_bytes = _parse_data(data)
+        events.append({
+            "index": int(idx),
+            "time": ts,
+            "code": "XXXX",
+            "category": code_info[0],
+            "description": code_info[1],
+            "data_desc": _describe_data("XXXX", data_bytes),
+            "data_raw": data,
+        })
+        code_counter["XXXX"] += 1
+    
+    # Sort by index
+    events.sort(key=lambda e: e['index'])
 
-    # Non-N000 events = potential issues
-    issue_events = [e for e in events if e['code'] != 'N000']
+    # Categorize
     boot_events = [e for e in events if e['code'] == 'N000']
-
+    issue_events = [e for e in events if e['code'] != 'N000']
+    
+    # Generate category summary
+    category_summary = {}
+    for e in issue_events:
+        cat = e.get('category', 'Unknown')
+        if cat not in category_summary:
+            category_summary[cat] = {"count": 0, "codes": set()}
+        category_summary[cat]["count"] += 1
+        category_summary[cat]["codes"].add(e['code'])
+    
     return {
         "title": "📋 SIOlog 分析 — Lenovo SIO/EC 事件日志",
         "found": True,
         "header": info,
         "total_events": len(events),
-        "unique_codes": sorted(event_codes),
+        "unique_codes": sorted(code_counter.keys()),
+        "code_counts": {k: v for k, v in sorted(code_counter.items())},
         "boot_count": len(boot_events),
         "issue_events": issue_events,
         "issue_count": len(issue_events),
-        "all_events": events[-200:],  # Last 200 events
-        "summary": f"共 {len(events)} 个事件，{len(boot_events)} 次启动记录，{len(issue_events)} 个异常事件" if events else "无事件记录",
+        "category_summary": {k: {"count": v["count"], "codes": sorted(v["codes"])} 
+                            for k, v in sorted(category_summary.items())},
+        "all_events": events[-200:],
+        "summary": (
+            f"共 {len(events)} 个事件（{len(boot_events)} 次正常启动，"
+            f"{len(issue_events)} 个异常）"
+            if events else "无事件记录"
+        ),
     }
 
 

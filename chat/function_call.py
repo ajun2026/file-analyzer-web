@@ -48,7 +48,13 @@ Windows 诊断重点：
 - 用中文回答
 - 遇到诊断问题必须先调用工具，不要凭空猜测
 - 回答简洁专业，给出可操作的诊断建议
-- 引用具体的事件 ID、时间戳、数值"""
+- 引用具体的事件 ID、时间戳、数值
+
+⚠️ 电源功率判断规则：
+- DMS.txt / AMI_BIOS_DUMP.txt 中的 PowerSupply (SMBIOS Type 39) 数据不可信：Lenovo ThinkStation 通常不填写真实 PSU 信息
+- 如果 PowerSupply 的 Location/DeviceName/Manufacturer/SerialNum/ModelPartNum 等字段全部为 "To Be Filled By O.E.M."（占位符），说明制造商未填写，MaxPowerCap 的值无效
+- 此时不要推断或猜测电源瓦数（如 MaxPowerCap=8000 不代表 800W），直接说明「无法从日志中确定电源功率」
+- 日志包中没有其他可靠途径获取 PSU 瓦数，不要自行脑补"""
 
 CHAT_TOOLS = [
     {
