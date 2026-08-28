@@ -186,8 +186,8 @@
             <!-- === Other / BMC: file tabs + AI chat tabs === -->
             <div class="tabs" id="tabs">
                 <span id="file-tabs"></span>
-                <div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
-                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>
+                {% if not is_guest %}<div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
+                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>{% endif %}
             </div>
             <div class="tab-content" id="tab-content">
                 <div style="text-align:center;color:#8b949e;padding:60px 20px;">
@@ -207,8 +207,8 @@
                 <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
                 <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
                 <span id="file-tabs"></span>
-                <div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
-                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>
+                {% if not is_guest %}<div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
+                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>{% endif %}
                 {% elif os_type == 'windows' %}
                 <div class="tab" data-type="overview">📄 系统概览</div>
                 <div class="tab" data-type="diagnostics">📋 系统诊断</div>
@@ -218,8 +218,8 @@
                 <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
                 <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
                 <span id="file-tabs"></span>
-                <div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
-                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>
+                {% if not is_guest %}<div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
+                <div class="tab deep-tab" data-type="chat-hermes">🔬 深度分析</div>{% endif %}
                 {% endif %}
             </div>
             <div class="tab-content" id="tab-content">

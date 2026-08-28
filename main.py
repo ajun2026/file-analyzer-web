@@ -117,7 +117,12 @@ for h in load_history():
 # ─── Routes ───────────────────────────────────────────────────
 
 async def get_current_user(request: Request):
-    """读取主系统登录 cookie（user_token）→ 验证 → 返回 {username, role}（未登录返回 None）。"""
+    """身份来源：优先信任 CloudDiag 代理注入头（已登录验证）→ 兜底 cookie 验证。
+    返回 {username, role}（未登录返回 None）。"""
+    # 代理注入（X-Log-Analyzer-User/Role——CloudDiag 代理层已验证登录）
+    h_user = request.headers.get("x-log-analyzer-user")
+    if h_user:
+        return {"username": h_user, "role": request.headers.get("x-log-analyzer-role", "engineer")}
     token = request.cookies.get("user_token")
     if not token:
         return None
@@ -167,7 +172,7 @@ async def index(request: Request):
             history = [h for h in history if h.get("username") == user["username"]]
     else:
         history = []
-    return jinja_env.get_template("upload.html").render(history_json=json.dumps(history, ensure_ascii=False), current_user=user["username"] if user else "", is_admin=(user and user["role"] == "admin"))
+    return jinja_env.get_template("upload.html").render(history_json=json.dumps(history, ensure_ascii=False), current_user=user["username"] if user else "", is_admin=(user and user["role"] == "admin"), is_guest=(user and user["role"] == "guest"))
 
 
 @app.get("/report/{job_id}", response_class=HTMLResponse)
@@ -181,6 +186,9 @@ async def analyze_page(request: Request, job_id: str):
     user, err = await _check_owner(request, job_id)
     if err:
         return HTMLResponse(f"<h1>无权访问</h1><p>{err}</p>", status_code=403 if "无权" in err else 401)
+    _g = await get_current_user(request)
+    user_role = (_g or {}).get("role", "")
+    is_guest = user_role == "guest"
     os_type = "windows"
     if job_id not in jobs:
         # Try to load from history
@@ -189,11 +197,11 @@ async def analyze_page(request: Request, job_id: str):
             if h["job_id"] == job_id:
                 os_type = h.get("os_type", "windows")
                 return jinja_env.get_template("analyze.html").render(
-                    job_id=job_id, os_type=os_type,
+                    job_id=job_id, os_type=os_type, is_guest=is_guest,
                     history_entry=json.dumps(h, ensure_ascii=False))
         return HTMLResponse("<h1>任务不存在</h1><p>该日志可能已被清理，请重新上传</p>", status_code=404)
     os_type = jobs[job_id].get("os_type", "windows")
-    return jinja_env.get_template("analyze.html").render(job_id=job_id, os_type=os_type, history_entry="{}")
+    return jinja_env.get_template("analyze.html").render(job_id=job_id, os_type=os_type, history_entry="{}", is_guest=is_guest)
 
 
 @app.get("/api/history")
@@ -372,6 +380,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), sn: str = 
     user = await get_current_user(request)
     if not user:
         return JSONResponse({"error": "未登录或登录已过期——请从系统工作台进入"}, status_code=401)
+    # 游客允许上传（限 200MB——保存后检查）
     job_id = uuid.uuid4().hex[:12]
     filename = file.filename.lower()
     file_stem = Path(file.filename).suffix.lower()
@@ -399,6 +408,11 @@ async def upload_file(request: Request, file: UploadFile = File(...), sn: str = 
     async with aiofiles.open(filepath, 'wb') as f:
         while chunk := await file.read(1024 * 1024):
             await f.write(chunk)
+
+    # 游客上传限 200MB（2026-08-28 游客模式）
+    if user.get("role") == "guest" and filepath.stat().st_size > 200 * 1024 * 1024:
+        filepath.unlink(missing_ok=True)
+        return JSONResponse({"error": "游客上传限制 200MB——常规分析"}, status_code=403)
 
     # Extract
     extract_dir = extract_archive(filepath)
@@ -561,6 +575,9 @@ async def get_report(request: Request, job_id: str, type: str = "overview"):
 async def delete_job(request: Request, job_id: str):
     user, err = await _check_owner(request, job_id)
     if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
+    _g = await get_current_user(request)
+    if _g and _g.get("role") == "guest":
+        return JSONResponse({"error": "游客无删除权限"}, status_code=403)
     """删除一个上传任务及其所有关联文件"""
     import shutil
 
@@ -597,6 +614,9 @@ async def delete_job(request: Request, job_id: str):
 async def download_file(request: Request, job_id: str):
     user, err = await _check_owner(request, job_id)
     if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
+    _g = await get_current_user(request)
+    if _g and _g.get("role") == "guest":
+        return JSONResponse({"error": "游客无此权限——仅常规分析（上传+查看）"}, status_code=403)
     """下载原始上传的压缩包"""
     import shutil
 
@@ -632,6 +652,9 @@ async def download_file(request: Request, job_id: str):
 async def chat_endpoint(job_id: str, request: Request):
     user, err = await _check_owner(request, job_id)
     if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
+    _g = await get_current_user(request)
+    if _g and _g.get("role") == "guest":
+        return JSONResponse({"error": "游客无此权限——仅常规分析（上传+查看）"}, status_code=403)
     """AI chat endpoint — Function Calling for Windows/Linux, context injection for BMC/other"""
     body = await request.json()
     user_message = body.get("message", "").strip()
@@ -933,6 +956,9 @@ def _find_read_file(tslog: Path, names: list) -> str:
 async def chat_hermes_submit(request: Request, job_id: str, body: dict):
     user, err = await _check_owner(request, job_id)
     if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
+    _g = await get_current_user(request)
+    if _g and _g.get("role") == "guest":
+        return JSONResponse({"error": "游客无此权限——仅常规分析（上传+查看）"}, status_code=403)
     """Submit a chat request to the Hermes Agent bridge."""
     if job_id not in jobs:
         return JSONResponse({"error": "任务不存在"}, status_code=404)

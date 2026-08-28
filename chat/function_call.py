@@ -8,6 +8,7 @@ from analyzers.dump_parser import parse_single_dump
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-96ebbb3ccd854d41b86e6599b56e8e28")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 # In-memory chat history per job
 chat_sessions: dict = {}  # job_id -> list of {"role":"user"|"assistant"|"tool", "content":"..."}
@@ -323,7 +324,7 @@ async def _call_deepseek(messages: list) -> dict:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "deepseek-chat",
+                "model": DEEPSEEK_MODEL,
                 "messages": messages,
                 "tools": CHAT_TOOLS,
                 "tool_choice": "auto",

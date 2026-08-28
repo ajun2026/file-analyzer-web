@@ -1,4 +1,5 @@
 """Context injection chat for BMC/Other."""
+import os
 import httpx
 from pathlib import Path
 from fastapi.responses import JSONResponse
@@ -126,7 +127,7 @@ async def _chat_context_inject(job_id: str, user_message: str, tslog, os_type: s
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "deepseek-chat",
+                    "model": DEEPSEEK_MODEL,
                     "messages": messages,
                     "temperature": 0.7,
                     "max_tokens": 8192,

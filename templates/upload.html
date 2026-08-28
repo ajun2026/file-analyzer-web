@@ -163,7 +163,7 @@
                 el.innerHTML = '<div class="empty-history">暂无上传记录</div>';
                 return;
             }
-            var html = '<table class="history-table"><thead><tr><th>文件名</th><th>主机 SN</th><th>系统</th><th>大小</th><th>上传时间</th><th>内容</th><th>操作</th></tr></thead><tbody>';
+            var html = '<table class="history-table"><thead><tr><th>文件名</th><th>主机 SN</th><th>系统</th><th>大小</th><th>上传时间</th>{% if is_admin %}<th>上传账号</th>{% endif %}<th>内容</th><th>操作</th></tr></thead><tbody>';
             for (var i = 0; i < historyData.length; i++) {
                 var h = historyData[i];
                 var dt = h.created_at ? new Date(h.created_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}) : '-';
@@ -178,11 +178,12 @@
                     '<td>' + osTypeBadge(h.os_type) + '</td>' +
                     '<td><span class="meta">' + h.size_mb + ' MB</span></td>' +
                     '<td><span class="meta">' + dt + '</span></td>' +
+                    '{% if is_admin %}<td><span class="meta">' + escHtml(h.username || '-') + '</span></td>{% endif %}' +
                     '<td>' + (badges || '<span class="meta">-</span>') + '</td>' +
                     '<td style="display:flex;gap:8px;align-items:center;">' +
                         '<a class="name" href="analyze/' + h.job_id + '" style="font-size:13px;">进入分析 →</a>' +
-                        '<a class="name" href="api/download/' + h.job_id + '" style="font-size:13px;" title="下载原始文件">⬇ 下载</a>' +
-                        '<button class="btn-delete" data-jobid="' + h.job_id + '" title="删除此记录及所有关联文件">🗑</button>' +
+                        '{% if not is_guest %}<a class="name" href="api/download/' + h.job_id + '" style="font-size:13px;" title="下载原始文件">⬇ 下载</a>' +
+                        '<button class="btn-delete" data-jobid="' + h.job_id + '" title="删除此记录及所有关联文件">🗑</button>{% endif %}' +
                     '</td>' +
                 '</tr>';
             }
