@@ -115,10 +115,59 @@ for h in load_history():
 
 
 # ─── Routes ───────────────────────────────────────────────────
-@app.get("/", response_class=HTMLResponse)
-async def index():
+
+async def get_current_user(request: Request):
+    """读取主系统登录 cookie（user_token）→ 验证 → 返回 {username, role}（未登录返回 None）。"""
+    token = request.cookies.get("user_token")
+    if not token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get("http://127.0.0.1:8000/api/auth/me",
+                                 headers={"Cookie": f"user_token={token}"})
+            if r.status_code == 200:
+                d = r.json()
+                return {"username": d.get("username"), "role": d.get("role", "engineer")}
+    except Exception:
+        pass
+    return None
+
+
+async def _check_owner(request: Request, job_id: str):
+    """校验访问权限：admin 放行所有；普通账号仅限自己的 job。返回 (username, error)。"""
+    u = await get_current_user(request)
+    if not u:
+        return None, "未登录或登录已过期——请从系统工作台进入"
+    user, role = u["username"], u["role"]
+    if role == "admin":
+        return user, None  # 管理员可查看/操作所有账号的日志
     history = load_history()
-    return jinja_env.get_template("upload.html").render(history_json=json.dumps(history, ensure_ascii=False))
+    for h in history:
+        if h.get("job_id") == job_id:
+            if h.get("username") == user:
+                return user, None
+            return None, "无权访问该日志（归属其他账号）"
+    return user, "任务不存在或已被清理"
+
+
+def _clean_name(s: str) -> str:
+    """清洗文件名：surrogate/非法字符 → '?'（防 JSON 编码崩溃——GBK 文件名场景）。"""
+    try:
+        return s.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+    except Exception:
+        return "?"
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    user = await get_current_user(request)
+    history = load_history()
+    if user:
+        if user["role"] != "admin":
+            history = [h for h in history if h.get("username") == user["username"]]
+    else:
+        history = []
+    return jinja_env.get_template("upload.html").render(history_json=json.dumps(history, ensure_ascii=False), current_user=user["username"] if user else "", is_admin=(user and user["role"] == "admin"))
 
 
 @app.get("/report/{job_id}", response_class=HTMLResponse)
@@ -127,8 +176,11 @@ async def view_report(job_id: str):
 
 
 @app.get("/analyze/{job_id}", response_class=HTMLResponse)
-async def analyze_page(job_id: str):
+async def analyze_page(request: Request, job_id: str):
     """New unified analysis page with file tree + tabs"""
+    user, err = await _check_owner(request, job_id)
+    if err:
+        return HTMLResponse(f"<h1>无权访问</h1><p>{err}</p>", status_code=403 if "无权" in err else 401)
     os_type = "windows"
     if job_id not in jobs:
         # Try to load from history
@@ -145,12 +197,21 @@ async def analyze_page(job_id: str):
 
 
 @app.get("/api/history")
-async def get_history():
-    return JSONResponse(load_history())
+async def get_history(request: Request):
+    user = await get_current_user(request)
+    history = load_history()
+    if user:
+        if user["role"] != "admin":
+            history = [h for h in history if h.get("username") == user["username"]]
+    else:
+        history = []
+    return JSONResponse(history)
 
 
 @app.get("/api/files/{job_id}")
-async def list_files(job_id: str):
+async def list_files(request: Request, job_id: str):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """List all files in the extracted tslog directory"""
     if job_id not in jobs or not jobs[job_id].get("tslog_path"):
         return JSONResponse({"error": "任务不存在"}, status_code=404)
@@ -174,9 +235,9 @@ async def list_files(job_id: str):
                 # Broken symlink or inaccessible — treat as plain file
                 is_dir, is_file, is_sym = False, False, True
             item = {
-                "name": entry.name,
+                "name": _clean_name(entry.name),
                 "type": "dir" if is_dir else "file",
-                "path": str(entry.relative_to(tslog)),
+                "path": _clean_name(str(entry.relative_to(tslog))),
             }
             if is_file or is_sym:
                 try:
@@ -215,7 +276,9 @@ async def list_files(job_id: str):
 
 
 @app.get("/api/file-content/{job_id}")
-async def get_file_content(job_id: str, path: str = ""):
+async def get_file_content(request: Request, job_id: str, path: str = ""):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """Read a text file from the tslog directory"""
     if job_id not in jobs or not jobs[job_id].get("tslog_path"):
         return JSONResponse({"error": "任务不存在"}, status_code=404)
@@ -287,7 +350,9 @@ async def get_file_content(job_id: str, path: str = ""):
 
 
 @app.get("/api/dump-detail/{job_id}")
-async def get_dump_detail(job_id: str, file: str = ""):
+async def get_dump_detail(request: Request, job_id: str, file: str = ""):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """Get detailed analysis for a single .dmp file"""
     if job_id not in jobs or not jobs[job_id].get("tslog_path"):
         return JSONResponse({"error": "任务不存在"}, status_code=404)
@@ -302,8 +367,11 @@ async def get_dump_detail(job_id: str, file: str = ""):
 
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), sn: str = Form("")):
+async def upload_file(request: Request, file: UploadFile = File(...), sn: str = Form("")):
     """上传日志包，仅保存+解压，不分析。支持 Windows (.7z/.zip/.rar) 和 Linux (.tar.gz/.tgz/.tar)"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录或登录已过期——请从系统工作台进入"}, status_code=401)
     job_id = uuid.uuid4().hex[:12]
     filename = file.filename.lower()
     file_stem = Path(file.filename).suffix.lower()
@@ -411,10 +479,10 @@ async def upload_file(file: UploadFile = File(...), sn: str = Form("")):
         "created_at": datetime.now(CHINA_TZ).isoformat(),
     }
 
-    # Save to persistent history
+    # Save to persistent history（记录归属账号）
     add_to_history(job_id, file.filename,
                    round(filepath.stat().st_size / 1048576, 1),
-                   evtx_count, tslog_path, os_type, sn)
+                   evtx_count, tslog_path, os_type, sn, username=user["username"])
 
     # Build friendly message based on OS type
     if os_type == "windows":
@@ -439,7 +507,9 @@ async def upload_file(file: UploadFile = File(...), sn: str = Form("")):
 
 
 @app.post("/api/analyze/{job_id}")
-async def trigger_analysis(job_id: str, analysis_type: str = "overview"):
+async def trigger_analysis(request: Request, job_id: str, analysis_type: str = "overview"):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """触发指定类型的分析"""
     if job_id not in jobs:
         return JSONResponse({"error": "任务不存在，请先上传文件"}, status_code=404)
@@ -462,7 +532,9 @@ async def trigger_analysis(job_id: str, analysis_type: str = "overview"):
 
 
 @app.get("/api/status/{job_id}")
-async def job_status(job_id: str):
+async def job_status(request: Request, job_id: str):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     if job_id not in jobs:
         return JSONResponse({"error": "Job not found"}, status_code=404)
     j = jobs[job_id]
@@ -475,7 +547,9 @@ async def job_status(job_id: str):
 
 
 @app.get("/api/report/{job_id}")
-async def get_report(job_id: str, type: str = "overview"):
+async def get_report(request: Request, job_id: str, type: str = "overview"):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     report_path = REPORT_DIR / f"{job_id}_{type}.json"
     if not report_path.exists():
         return JSONResponse({"error": f"报告未找到或分析未完成 (type={type})"}, status_code=404)
@@ -484,7 +558,9 @@ async def get_report(job_id: str, type: str = "overview"):
 
 
 @app.delete("/api/job/{job_id}")
-async def delete_job(job_id: str):
+async def delete_job(request: Request, job_id: str):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """删除一个上传任务及其所有关联文件"""
     import shutil
 
@@ -518,7 +594,9 @@ async def delete_job(job_id: str):
 
 
 @app.get("/api/download/{job_id}")
-async def download_file(job_id: str):
+async def download_file(request: Request, job_id: str):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """下载原始上传的压缩包"""
     import shutil
 
@@ -552,6 +630,8 @@ async def download_file(job_id: str):
 
 @app.post("/api/chat/{job_id}")
 async def chat_endpoint(job_id: str, request: Request):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """AI chat endpoint — Function Calling for Windows/Linux, context injection for BMC/other"""
     body = await request.json()
     user_message = body.get("message", "").strip()
@@ -850,7 +930,9 @@ def _find_read_file(tslog: Path, names: list) -> str:
 
 
 @app.post("/api/chat-hermes/{job_id}")
-async def chat_hermes_submit(job_id: str, body: dict):
+async def chat_hermes_submit(request: Request, job_id: str, body: dict):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """Submit a chat request to the Hermes Agent bridge."""
     if job_id not in jobs:
         return JSONResponse({"error": "任务不存在"}, status_code=404)
@@ -905,7 +987,9 @@ async def chat_hermes_submit(job_id: str, body: dict):
 
 
 @app.get("/api/chat-hermes/{job_id}/poll")
-async def chat_hermes_poll(job_id: str, rid: str = ""):
+async def chat_hermes_poll(request: Request, job_id: str, rid: str = ""):
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
     """Poll for Hermes bridge response."""
     if not rid:
         return JSONResponse({"status": "pending", "hint": "no request_id"})
@@ -940,4 +1024,4 @@ async def chat_hermes_poll(job_id: str, rid: str = ""):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8002)
+    uvicorn.run(app, host="127.0.0.1", port=8082)

@@ -1,13 +1,13 @@
 """Function Calling chat for Windows/Linux."""
-import json, httpx, asyncio
+import json, httpx, asyncio, os
 from pathlib import Path
 from typing import Optional
 from fastapi.responses import JSONResponse
 from detectors import detect_encoding, iter_evtx_cached
 from analyzers.dump_parser import parse_single_dump
 
-DEEPSEEK_API_KEY = "sk-96ebbb3ccd854d41b86e6599b56e8e28"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-96ebbb3ccd854d41b86e6599b56e8e28")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
 # In-memory chat history per job
 chat_sessions: dict = {}  # job_id -> list of {"role":"user"|"assistant"|"tool", "content":"..."}

@@ -84,7 +84,9 @@
     <div class="container">
         <div class="logo">🔬</div>
         <h1>IDG 日志诊断分析系统</h1>
-        <p class="subtitle">上传日志包 → 进入分析中心 → 多维度诊断</p>
+        <p class="subtitle">上传日志包 → 进入分析中心 → 多维度诊断
+          {% if current_user %}<span style="color:#58a6ff;margin-left:10px;">当前账号：{{ current_user }}{% if is_admin %}（管理员——可查看全部账号日志）{% else %}（仅可见本人上传的日志）{% endif %}</span>{% endif %}
+        </p>
 
         <label class="upload-zone" id="upload-zone" for="file-input">
             <div class="icon">📦</div>

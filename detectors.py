@@ -4,9 +4,11 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-BASE_DIR = Path("/opt/log-analyzer")
+BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 REPORT_DIR = BASE_DIR / "reports"
+UPLOAD_DIR.mkdir(exist_ok=True)
+REPORT_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = REPORT_DIR / "history.json"
 
 MAX_EVENTS = 10000
@@ -25,7 +27,7 @@ def save_history(history: list):
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-def add_to_history(job_id: str, filename: str, size: float, evtx_count: int, tslog_path: str = None, os_type: str = "windows", sn: str = ""):
+def add_to_history(job_id: str, filename: str, size: float, evtx_count: int, tslog_path: str = None, os_type: str = "windows", sn: str = "", username: str = ""):
     history = load_history()
     now = datetime.now(CHINA_TZ).isoformat()
     # Count files
@@ -48,6 +50,7 @@ def add_to_history(job_id: str, filename: str, size: float, evtx_count: int, tsl
         "dump": dump_exists,
         "os_type": os_type,
         "sn": sn,
+        "username": username,
         "created_at": now,
     })
     # Keep only last 50 entries
