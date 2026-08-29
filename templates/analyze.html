@@ -254,6 +254,13 @@
                 if (aiTab) aiTab.classList.add('active');
                 renderChat('api');
             }, 100);
+        } else {
+            // 非 other 布局：初始化激活默认 tab + 自动加载（Bug 14——点击相同 tab 被跳过导致默认不加载）
+            setTimeout(function() {
+                var defTab = document.querySelector('.tab[data-type="' + currentType + '"]');
+                if (defTab) defTab.classList.add('active');
+                runAnalysis(currentType);
+            }, 100);
         }
         let analysisCache = {};
         // Chat mode: 'api' (DeepSeek) or 'hermes' (local agent bridge)
@@ -394,7 +401,7 @@
             // Open first level dirs
             setTimeout(() => {
                 document.querySelectorAll('.tree-dir').forEach(d => {
-                    const childId = d.nextElementSibling?.id;
+                    const childId = d.nextElementSibling ? d.nextElementSibling.id : undefined;
                     if (childId) toggleDir(childId, true);
                 });
             }, 100);
@@ -605,7 +612,7 @@
             html += `<div class="card"><h3>📁 诊断文件 (${data.text_file_count || 0} 个 + ${data.evtx_count || 0} 个 evtx)</h3><div class="file-list">`;
             for (const [name, info] of Object.entries(files)) {
                 const kb = info.size ? (info.size/1024).toFixed(1) : 0;
-                html += `<span class="file-chip" style="cursor:pointer" onclick="document.querySelector('.tree-file.clickable')?.click()">${esc(name)} (${kb}KB)</span>`;
+                html += `<span class="file-chip" style="cursor:pointer" onclick="var el=document.querySelector('.tree-file.clickable'); if(el) el.click()">${esc(name)} (${kb}KB)</span>`;
             }
             html += '</div></div>';
             el.innerHTML = html || '<div class="alert alert-info">无数据</div>';
@@ -1064,17 +1071,45 @@
         function renderLinuxOverview(data) {
             const el = document.getElementById('tab-content');
             const os = data.os_info || {};
+            const hwRows = [
+                ['CPU', data.cpu ? `${data.cpu} × ${data.cpu_cores || '?'} 核${os.bogo ? `（${os.bogo} BogoMIPS）` : ''}` : null],
+                ['内存', data.memory && data.memory.MemTotal ? data.memory.MemTotal : null],
+                ['显卡', os.gpu || null],
+                ['显卡驱动', os.nvidia_driver || null],
+                ['主板', os.board || null],
+                ['BIOS', os.bios || null],
+                ['硬盘', (data.disks && data.disks.length) ? data.disks.join(' / ') : null],
+                ['磁盘接口', os.disk_interface || null],
+                ['网络', (data.nics && data.nics.length) ? data.nics.join(', ') : null],
+                ['USB 设备', (os.usb && os.usb.length) ? os.usb.join(', ') : null]
+            ].filter(r => r[1]);
             let html = '<div class="card"><h3>🖥️ 系统信息</h3><div class="grid-2">';
-            const rows = [['系统', os.pretty_name || os.name], ['内核', os.kernel], ['主机名', os.hostname], ['运行时间', os.uptime]];
-            for (const [l, v] of rows) if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+            const sysRows = [
+                ['操作系统', os.pretty_name || os.name || null],
+                ['发行版', os.lts ? `${os.name} ${os.lts}` : null],
+                ['内核', os.kernel || null],
+                ['主机名', os.hostname || null],
+                ['架构', os.arch || null],
+                ['安全启动', os.secureboot || null],
+                ['时区', os.timezone || null],
+                ['运行时间', os.uptime || null],
+                ['CPU 频率', os.cpu_freq || null],
+                ['OS 版本', os.os_release || null]
+            ].filter(r => r[1]);
+            for (const [l, v] of sysRows) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
             html += '</div></div>';
-            if (data.cpu) html += `<div class="card"><h3>🔲 处理器</h3><p><strong>${esc(data.cpu)}</strong> × ${data.cpu_cores || '?'} 核</p></div>`;
-            const mem = data.memory || {};
-            if (Object.keys(mem).length > 0) {
-                html += '<div class="card"><h3>💾 内存</h3><div class="grid-2">';
-                for (const [l, v] of Object.entries(mem)) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+            if (hwRows.length) {
+                html += '<div class="card"><h3>🔩 硬件信息</h3><table style="width:100%;font-size:13px;"><tbody>';
+                for (const [l, v] of hwRows) html += `<tr><td style="color:#8b949e;padding:5px 8px;width:110px;vertical-align:top;">${l}</td><td style="padding:5px 8px;"><strong>${esc(v)}</strong></td></tr>`;
+                html += '</tbody></table></div>';
+            }
+            const sw = os.software || {};
+            if (Object.keys(sw).length) {
+                html += '<div class="card"><h3>📦 软件信息</h3><div class="grid-2">';
+                for (const [l, v] of Object.entries(sw)) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
                 html += '</div></div>';
             }
+            if (data.varlog_fallback) html += '<div style="font-size:11px;color:#8b949e;margin-bottom:8px;">⚠️ 无 sosreport——信息从 /var/log 常规日志兜底提取</div>';
             html += `<div class="card"><h3>📁 日志文件 (${data.file_count || 0} 个)</h3><div class="file-list">`;
             for (const [name, info] of Object.entries(data.files || {}).slice(0, 30))
                 html += `<span class="file-chip">${esc(name)} (${info.kb}KB)</span>`;

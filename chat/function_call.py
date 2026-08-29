@@ -314,26 +314,49 @@ def _read_text_safe(filepath: Path) -> str:
         return f"（无法读取文件 {filepath.name}）"
 
 
+def _ai_channels() -> list:
+    """构建 AI 通道列表（主 → 备）。备用需 KEY_2 + BASE_URL_2 同时非空才启用（MODEL_2 空回退主模型）。"""
+    backup_key = os.getenv("DEEPSEEK_API_KEY_2", "").strip()
+    backup_url = os.getenv("DEEPSEEK_BASE_URL_2", "").strip().rstrip("/")
+    backup_model = os.getenv("DEEPSEEK_MODEL_2", "").strip() or DEEPSEEK_MODEL
+    channels = [{"key": DEEPSEEK_API_KEY, "url": DEEPSEEK_BASE_URL.rstrip("/"), "model": DEEPSEEK_MODEL}]
+    if backup_key and backup_url:
+        channels.append({"key": backup_key, "url": backup_url, "model": backup_model})
+    return channels
+
+
 async def _call_deepseek(messages: list) -> dict:
-    """Call DeepSeek API with httpx, return the response message"""
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(
-            f"{DEEPSEEK_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": DEEPSEEK_MODEL,
-                "messages": messages,
-                "tools": CHAT_TOOLS,
-                "tool_choice": "auto",
-                "temperature": 0.3,
-                "max_tokens": 2000,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
+    """Call AI API（多通道自动故障切换——2026-08-28 ② 备用 AI 通道）。
+    主 → 备，每通道最多 2 次；content 非空为唯一成功出口；全部失败抛 RuntimeError（逐条错误）。"""
+    errors = []
+    for ch in _ai_channels():
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    resp = await client.post(
+                        f"{ch['url']}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {ch['key']}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": ch["model"],
+                            "messages": messages,
+                            "tools": CHAT_TOOLS,
+                            "tool_choice": "auto",
+                            "temperature": 0.3,
+                            "max_tokens": 8000,
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    content = data["choices"][0]["message"].get("content") or ""
+                    if content.strip():
+                        return data  # ✅ 唯一成功出口
+                    errors.append(f"{ch['url']}: 空回复(第{attempt+1}次)")
+            except Exception as e:
+                errors.append(f"{ch['url']}: {str(e)[:120]}(第{attempt+1}次)")
+    raise RuntimeError(f"AI 分析所有通道均失败: {'; '.join(errors)}")
 async def _chat_function_calling(job_id: str, user_message: str, tslog):
     """Function Calling mode for Windows/Linux logs"""
 

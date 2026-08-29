@@ -66,23 +66,40 @@ def resolve_context(payload: dict, rid: str):
 
 
 def call_llm(context: str, message: str) -> str:
-    """调 OpenAI 兼容 API 生成分析。"""
+    """调 AI API（多通道自动故障切换——② 备用 AI 通道）。
+    主 → 备，每通道最多 2 次；content 非空为成功；全部失败返回错误摘要（不抛——写 done 不卡队列）。"""
     if not API_KEY:
         return "【深度分析不可用】未配置 DEEPSEEK_API_KEY 环境变量。"
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"===== 日志上下文 =====\n{context}\n\n===== 用户问题 =====\n{message}"},
-        ],
-        "temperature": 0.2,
-        "max_tokens": 2000,
-    }
-    resp = httpx.post(f"{BASE_URL}/chat/completions", json=payload, timeout=180,
-                      headers={"Authorization": f"Bearer {API_KEY}"})
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    backup_key = os.getenv("DEEPSEEK_API_KEY_2", "").strip()
+    backup_url = os.getenv("DEEPSEEK_BASE_URL_2", "").strip().rstrip("/")
+    backup_model = os.getenv("DEEPSEEK_MODEL_2", "").strip() or MODEL
+    channels = [{"key": API_KEY, "url": BASE_URL, "model": MODEL}]
+    if backup_key and backup_url:
+        channels.append({"key": backup_key, "url": backup_url, "model": backup_model})
+
+    errors = []
+    for ch in channels:
+        for attempt in range(2):
+            try:
+                payload = {
+                    "model": ch["model"],
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": f"===== 日志上下文 =====\n{context}\n\n===== 用户问题 =====\n{message}"},
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 8000,
+                }
+                resp = httpx.post(f"{ch['url']}/chat/completions", json=payload, timeout=180,
+                                  headers={"Authorization": f"Bearer {ch['key']}"})
+                resp.raise_for_status()
+                content = (resp.json()["choices"][0]["message"].get("content") or "").strip()
+                if content:
+                    return content  # ✅ 成功出口
+                errors.append(f"{ch['url']}: 空回复(第{attempt+1}次)")
+            except Exception as e:
+                errors.append(f"{ch['url']}: {str(e)[:120]}(第{attempt+1}次)")
+    return f"【深度分析失败】AI 分析所有通道均失败: {'; '.join(errors)}"
 
 
 def process_request(rid: str):

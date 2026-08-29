@@ -343,8 +343,13 @@ async def get_file_content(request: Request, job_id: str, path: str = ""):
 
     enc = detect_encoding(filepath)
     try:
-        with open(filepath, 'r', encoding=enc, errors='replace') as f:
-            content = f.read()
+        # 限读 512KB + 异步线程（Bug 11：32MB 大文件不再卡页面/阻塞事件循环）
+        def _read_limited():
+            with open(filepath, 'r', encoding=enc, errors='replace') as f:
+                return f.read(512 * 1024)
+        content = await asyncio.to_thread(_read_limited)
+        if size > 512 * 1024:
+            content += "\n\n...[TRUNCATED: 文件过大，仅显示前 512KB]"
     except Exception as e:
         return JSONResponse({"error": f"读取失败: {e}"}, status_code=500)
 
@@ -869,7 +874,7 @@ def _process_hermes_request_bg(payload: dict, request_id: str, tslog: Path):
             for f in sorted(tslog.rglob("*")):
                 if f.is_file() and file_count < 80:
                     size_kb = f.stat().st_size / 1024
-                    rel = str(f.relative_to(tslog))
+                    rel = _clean_name(str(f.relative_to(tslog)))  # GBK 清洗（Bug 9——防 context 写入崩溃）
                     ctx_files.append(f"  {rel} ({size_kb:.1f} KB)")
                     file_count += 1
                     # Auto-read small text files
@@ -980,7 +985,7 @@ async def chat_hermes_submit(request: Request, job_id: str, body: dict):
         if f.is_file():
             try:
                 file_list.append({
-                    "path": str(f.relative_to(tslog)),
+                    "path": _clean_name(str(f.relative_to(tslog))),  # GBK 清洗（Bug 9）
                     "size": f.stat().st_size,
                     "suffix": f.suffix.lower()
                 })

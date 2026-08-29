@@ -47,14 +47,14 @@ async def _chat_context_inject(job_id: str, user_message: str, tslog, os_type: s
         dirs_seen = set()
         for fp in all_files:
             try:
-                rel = str(fp.relative_to(tslog))
+                rel = _clean_name(str(fp.relative_to(tslog)))
             except ValueError:
-                rel = fp.name
-            parent = str(fp.parent.relative_to(tslog)) if fp.parent != tslog else "."
+                rel = _clean_name(fp.name)
+            parent = _clean_name(str(fp.parent.relative_to(tslog)) if fp.parent != tslog else ".")
             if parent not in dirs_seen:
                 files_context += f"\n📁 {parent}/\n"
                 dirs_seen.add(parent)
-            files_context += f"    - {fp.name}\n"
+            files_context += f"    - {_clean_name(fp.name)}\n"
 
         # Collect readable text paths
         text_exts = {'.txt', '.log', '.cfg', '.conf', '.ini', '.json', '.xml', '.csv',
@@ -81,9 +81,9 @@ async def _chat_context_inject(job_id: str, user_message: str, tslog, os_type: s
             if total_chars >= max_chars:
                 break
             try:
-                rel = str(fp.relative_to(tslog))
+                rel = _clean_name(str(fp.relative_to(tslog)))
             except ValueError:
-                rel = fp.name
+                rel = _clean_name(fp.name)
             is_key = fp.name.lower() in bmc_critical + bmc_important
             per_file_max = 10240 if is_key else 5120
 
@@ -118,29 +118,39 @@ async def _chat_context_inject(job_id: str, user_message: str, tslog, os_type: s
         {"role": "user", "content": user_message},
     ]
 
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                f"{DEEPSEEK_BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": DEEPSEEK_MODEL,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 8192,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            reply = data["choices"][0]["message"]["content"]
-            return JSONResponse({"reply": reply})
+    # 多通道自动故障切换（② 备用 AI 通道——2026-08-28）
+    errors = []
+    backup_key = os.getenv("DEEPSEEK_API_KEY_2", "").strip()
+    backup_url = os.getenv("DEEPSEEK_BASE_URL_2", "").strip().rstrip("/")
+    backup_model = os.getenv("DEEPSEEK_MODEL_2", "").strip() or DEEPSEEK_MODEL
+    channels = [{"key": DEEPSEEK_API_KEY, "url": DEEPSEEK_BASE_URL.rstrip("/"), "model": DEEPSEEK_MODEL}]
+    if backup_key and backup_url:
+        channels.append({"key": backup_key, "url": backup_url, "model": backup_model})
 
-    except httpx.HTTPStatusError as e:
-        return JSONResponse(
-            {"error": f"API 调用失败: {e.response.status_code} - {e.response.text[:200]}"},
-            status_code=502)
-    except Exception as e:
-        return JSONResponse({"error": str(e)[:300]}, status_code=500)
+    for ch in channels:
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    resp = await client.post(
+                        f"{ch['url']}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {ch['key']}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": ch["model"],
+                            "messages": messages,
+                            "temperature": 0.7,
+                            "max_tokens": 8192,
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    reply = data["choices"][0]["message"].get("content") or ""
+                    if reply.strip():
+                        return JSONResponse({"reply": reply})  # ✅ 成功出口
+                    errors.append(f"{ch['url']}: 空回复(第{attempt+1}次)")
+            except Exception as e:
+                errors.append(f"{ch['url']}: {str(e)[:120]}(第{attempt+1}次)")
+
+    return JSONResponse({"error": f"AI 分析所有通道均失败: {'; '.join(errors)}"}, status_code=502)
