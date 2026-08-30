@@ -1,3 +1,28 @@
+## v3.8 — 2026-08-30（文件预览修复 + 布局优化 + HTML 渲染）
+
+### 修复
+
+- **file-content 500（asyncio 未导入）**：v3.5 的 Bug 11 修复用了 `asyncio.to_thread` 但 main.py 顶部未 `import asyncio` → 打开任何文件报 "name 'asyncio' is not defined" → 前端一直"加载中"
+  - 修复：顶部补 `import asyncio`；实测 bios.rom 16MB 30ms 返回（512KB 限读 + 截断标记）
+- **HTML/HTM 文件不可打开**：前端 readable 列表与服务端白名单均无 .html → Intel_Scope_Info.html 等打不开
+  - 修复：两处白名单加 html/htm
+
+### 新功能
+
+- **HTML 文件渲染显示**：新增 `/api/file-raw/{job_id}`（HTML 全量返回 text/html）+ 前端 iframe 渲染（sandbox 隔离）
+  - 点击 .html 文件 → 显示渲染页面（如 Intel System Scope Tool 的 Software/System/PCIe 选项卡）而非源码
+- **文件 tab 替换模式**：右侧内容区作为左侧文件树的展示窗口——点击新文件替换当前文件 tab（始终最多 1 个——不累积）
+
+### 布局优化（分析页）
+
+- **左侧固定竖排**：「← 返回主界面 + ID + 📁 诊断文件」固定在左侧（不因文件 tab 变化移动）
+- **tab 与返回同行**：系统/文件选项卡在右侧内容区顶部（与返回/ID 同一水平）
+- **文件 tab 排最后**：文件选项卡在 AI/深度分析之后（系统 tab 顺序不变）
+- **page-title 隐藏**：当前 tab 标题与 tab 栏重复——取消显示；ID 弱化（小灰字——保留售后定位用）
+
+### 部署说明
+
+- 拉取后重启服务生效；无数据库迁移
 ## v3.6 — 2026-08-30（Linux 分析精简 + varlog 兜底修复 + 界面同步 <公网入口IP>）
 
 ### 修复

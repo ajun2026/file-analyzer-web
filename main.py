@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Log Analyzer — FastAPI entry point."""
-import json, os, uuid, threading, subprocess, shutil, re
+import json, os, uuid, threading, subprocess, shutil, re, asyncio
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import FastAPI, File, Form, UploadFile, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 import jinja2, aiofiles, httpx
 
 from detectors import (load_history, save_history, add_to_history,
@@ -310,7 +310,7 @@ async def get_file_content(request: Request, job_id: str, path: str = ""):
 
     # Only allow readable text files + dmp (also allow extension-less files)
     ext = filepath.suffix.lower()
-    if ext and ext not in ('.txt', '.log', '.rom', '.csv', '.xml', '.ini', '.cfg', '.inf', '.evt', '.dmp'):
+    if ext and ext not in ('.txt', '.log', '.rom', '.csv', '.xml', '.ini', '.cfg', '.inf', '.evt', '.dmp', '.html', '.htm'):
         return JSONResponse({"error": f"不支持预览 .{ext} 文件"}, status_code=400)
 
     size = filepath.stat().st_size
@@ -367,6 +367,25 @@ async def get_file_content(request: Request, job_id: str, path: str = ""):
         "encoding": enc,
         "content": content,
     })
+
+
+@app.get("/api/file-raw/{job_id}")
+async def get_file_raw(request: Request, job_id: str, path: str = ""):
+    """HTML 文件全量返回（iframe 渲染用——2026-08-30 主人要求 HTML 渲染显示而非源码）"""
+    user, err = await _check_owner(request, job_id)
+    if err: return JSONResponse({"error": err}, status_code=403 if "无权" in err else 401)
+    if job_id not in jobs or not jobs[job_id].get("tslog_path"):
+        return JSONResponse({"error": "任务不存在"}, status_code=404)
+    tslog = Path(jobs[job_id]["tslog_path"])
+    filepath = (tslog / path).resolve()
+    if not str(filepath).startswith(str(tslog.resolve())):
+        return JSONResponse({"error": "非法路径"}, status_code=403)
+    if not filepath.exists() or not filepath.is_file():
+        return JSONResponse({"error": "文件不存在"}, status_code=404)
+    ext = filepath.suffix.lower()
+    if ext not in ('.html', '.htm'):
+        return JSONResponse({"error": "仅支持 HTML 文件渲染"}, status_code=400)
+    return FileResponse(filepath, media_type="text/html")
 
 
 @app.get("/api/dump-detail/{job_id}")
