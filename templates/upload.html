@@ -8,16 +8,14 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-            background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+            background: #0d1117;
             color: #c9d1d9; min-height: 100vh;
         }
-        .container { max-width: 900px; width: 90%; margin: 0 auto; padding: 48px 20px; text-align: center; }
-        .logo { font-size: 48px; margin-bottom: 16px; }
-        h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; color: #f0f6fc; }
-        .subtitle { color: #8b949e; font-size: 15px; margin-bottom: 40px; }
+        .container { width: 100%; padding: 24px 28px; box-sizing: border-box; }
+        .subtitle { color: #8b949e; font-size: 15px; margin-bottom: 20px; }
         .upload-zone {
             display: block; border: 2px dashed #30363d; border-radius: 12px; padding: 60px 30px;
-            cursor: pointer; transition: all 0.2s; background: #161b22; margin-bottom: 24px;
+            cursor: pointer; transition: all 0.2s; background: #161b22; margin-bottom: 24px; text-align: center;
         }
         .upload-zone:hover, .upload-zone.dragover { border-color: #58a6ff; background: #1c2333; }
         .upload-zone .icon { font-size: 56px; margin-bottom: 16px; opacity: 0.6; }
@@ -82,12 +80,6 @@
 </head>
 <body>
     <div class="container">
-        <div class="logo">🔬</div>
-        <h1>IDG 日志诊断分析系统</h1>
-        <p class="subtitle">上传日志包 → 进入分析中心 → 多维度诊断
-          {% if current_user %}<span style="color:#58a6ff;margin-left:10px;">当前账号：{{ current_user }}{% if is_admin %}（管理员——可查看全部账号日志）{% else %}（仅可见本人上传的日志）{% endif %}</span>{% endif %}
-        </p>
-
         <label class="upload-zone" id="upload-zone" for="file-input">
             <div class="icon">📦</div>
             <p>拖拽日志文件到此处，或点击选择</p>
@@ -163,7 +155,7 @@
                 el.innerHTML = '<div class="empty-history">暂无上传记录</div>';
                 return;
             }
-            var html = '<table class="history-table"><thead><tr><th>文件名</th><th>主机 SN</th><th>系统</th><th>大小</th><th>上传时间</th>{% if is_admin %}<th>上传账号</th>{% endif %}<th>内容</th><th>操作</th></tr></thead><tbody>';
+            var html = '<table class="history-table"><thead><tr><th>文件名</th><th>主机 SN</th><th>系统</th><th>大小</th><th>上传时间</th><th>上传账号</th><th>内容</th><th>操作</th></tr></thead><tbody>';
             for (var i = 0; i < historyData.length; i++) {
                 var h = historyData[i];
                 var dt = h.created_at ? new Date(h.created_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}) : '-';
@@ -178,12 +170,12 @@
                     '<td>' + osTypeBadge(h.os_type) + '</td>' +
                     '<td><span class="meta">' + h.size_mb + ' MB</span></td>' +
                     '<td><span class="meta">' + dt + '</span></td>' +
-                    '{% if is_admin %}<td><span class="meta">' + escHtml(h.username || '-') + '</span></td>{% endif %}' +
+                    '<td><span class="meta">' + escHtml(h.username || '-') + '</span></td>' +
                     '<td>' + (badges || '<span class="meta">-</span>') + '</td>' +
                     '<td style="display:flex;gap:8px;align-items:center;">' +
                         '<a class="name" href="analyze/' + h.job_id + '" style="font-size:13px;">进入分析 →</a>' +
-                        '{% if not is_guest %}<a class="name" href="api/download/' + h.job_id + '" style="font-size:13px;" title="下载原始文件">⬇ 下载</a>' +
-                        '<button class="btn-delete" data-jobid="' + h.job_id + '" title="删除此记录及所有关联文件">🗑</button>{% endif %}' +
+                        '<a class="name" href="api/download/' + h.job_id + '" style="font-size:13px;" title="下载原始文件">⬇ 下载</a>' +
+                        '<button class="btn-delete" data-jobid="' + h.job_id + '" title="删除此记录及所有关联文件">🗑</button>' +
                     '</td>' +
                 '</tr>';
             }

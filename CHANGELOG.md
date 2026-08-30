@@ -1,3 +1,22 @@
+## v3.6 — 2026-08-30（Linux 分析精简 + varlog 兜底修复 + 界面同步 106.54.193.9）
+
+### 修复
+
+- **varlog 兜底触发条件过严**：主路径从 dmesg 提取 kernel 后 os_info 非空 → 完整硬件提取不触发（纯 /var/log 包只剩内核信息）
+  - 修复：无 OS 名称（os-release 缺失）即触发 `_extract_varlog_info()` 完整提取
+  - 返回结构补 `varlog_fallback` 字段（前端显示"⚠️ 无 sosreport——信息从 /var/log 常规日志兜底提取"）
+  - 实测：纯 var/log 包（dmesg/kern.log/syslog/dpkg.log/auth.log）→ Ubuntu 22.04 / Xeon 5418Y 96核 / 511GB / RTX A4000 / 主板 / BIOS / USB / Docker 全字段提取
+
+### 同步（106.54.193.9 部署实例——界面一致）
+
+- **Linux 分析页选项卡精简**（6 → 3）：系统概览 / AI 分析 / 深度分析（内核诊断/系统日志/整体总结入口移除——渲染函数保留）
+- **Linux 默认 tab**：linux_summary → linux_overview（进入即系统概览）
+- **IDG 主界面**：纯色背景（去渐变）/ 全宽布局（去 max-width 居中——适配 iframe）/ 移除 h1 标题+logo+账号提示行（直接上传区）/ 上传区文字居中
+- **分析页去边框**（零边框线分层）：sidebar/header 去掉 border（#161b22 纯色分层——方案 #5）
+
+### 部署说明
+
+- 拉取后重启服务生效；无数据库迁移
 # Changelog — file-analyzer-web (Log Analyzer)
 
 ## v3.5 — 2026-08-28（Bug 修复 5 项 + 备用 AI 通道 + Linux var/log 增强）

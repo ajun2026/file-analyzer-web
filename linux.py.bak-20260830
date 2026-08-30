@@ -29,214 +29,6 @@ def _find_sos_root(log_dir: Path) -> Path:
     return log_dir
 
 
-def _extract_varlog_info(log_dir: Path) -> dict:
-    """从 /var/log 常规日志兜底提取硬件/系统信息(纯 var/log 包、无 sosreport 结构时启用)。
-
-    来源:
-      - kern.log / dmesg:内核版本、OS 版本线索、DMI 主板、BIOS 版本、内存、CPU、NVIDIA 平台
-      - dpkg.log:linux-image 包版本(OS 补丁级)、nvidia-driver 包版本
-      - Xorg.0.log:NVIDIA 显卡型号、驱动版本
-    """
-    info = {"os_info": {}, "cpu": "", "cpu_cores": 0, "memory": {},
-            "bios": "", "board": "", "gpu": "", "nvidia_driver": "",
-            "disks": [], "nics": [], "usb": [], "software": {},
-            "secureboot": "", "arch": "", "timezone": ""}
-
-    def find_log(*names):
-        # 按 names 优先级查找(而非 rglob 遍历顺序),dmesg 优先于 kern.log
-        for n in names:
-            for f in log_dir.rglob("*"):
-                if f.is_file() and f.name.lower() == n:
-                    return f
-        return None
-
-    def read_lines(fp, limit=60000):
-        try:
-            return fp.read_text(encoding="utf-8", errors="replace").split("\n")[:limit]
-        except Exception:
-            return []
-
-    # ── dmesg(优先,指南推荐)/ kern.log 兜底 ──
-    kern = find_log("dmesg", "dmesg.0", "dmesg.log", "kern.log", "kern.log.1")
-    disk_map = {}  # dev → 容量(按设备名去重)
-    usb_seen = set()
-    # kern.log 也参与 USB 扫描(热插拔设备只在 kern.log,不在 dmesg)
-    usb_src = find_log("kern.log", "kern.log.1", "syslog")
-    if kern:
-        klines = read_lines(kern)
-        # CPU 核数:smpboot Total(最准);dmesg 无则 kern.log 兜底
-        bogo_m = re.search(r"smpboot: Total of (\d+) processors.*?\(([\d.]+) BogoMIPS\)", "\n".join(klines[:2000]))
-        if not bogo_m:
-            k2 = find_log("kern.log", "kern.log.1")
-            if k2:
-                bogo_m = re.search(r"smpboot: Total of (\d+) processors.*?\(([\d.]+) BogoMIPS\)", "\n".join(read_lines(k2)[:2000]))
-        if bogo_m:
-            info["cpu_cores"] = int(bogo_m.group(1))
-            info["bogo"] = bogo_m.group(2)
-        else:
-            info["cpu_cores"] = len([l for l in klines if "smpboot: CPU" in l])
-        # 主机名:日志行第 3 字段(Jan 4 14:20:39 SikunStation kernel:),从 kern.log/syslog 提取
-        hn_src = usb_src or kern
-        for line in read_lines(hn_src)[:300]:
-            m = re.match(r"^\w{3}\s+\d+\s+[\d:]+ (\S+)", line)
-            if m and not info["os_info"].get("hostname"):
-                info["os_info"]["hostname"] = m.group(1)
-                break
-        for line in klines:
-            # 内核版本 + OS 版本线索
-            m = re.search(r"Linux version ([\w.+-]+) .*\(Ubuntu ([^)]+)\)", line)
-            if m:
-                if not info["os_info"].get("kernel"):
-                    info["os_info"]["kernel"] = m.group(1)
-                if not info["os_info"].get("os_release"):
-                    info["os_info"]["os_release"] = m.group(2)
-            # DMI 主板型号
-            m = re.search(r"DMI: ([\w ]+)/([\w]+)", line)
-            if m and not info["board"]:
-                info["board"] = m.group(1) if m.group(2) == "INVALID" else f"{m.group(1)} ({m.group(2)})"
-            # BIOS 版本 + 日期
-            m = re.search(r"BIOS ([\w.]+) (\d{2}/\d{2}/\d{4})", line)
-            if m and not info["bios"]:
-                info["bios"] = f"{m.group(1)} ({m.group(2)})"
-            # 内存总量
-            m = re.search(r"Memory: \d+K/(\d+)K available", line)
-            if m and not info["memory"].get("MemTotal"):
-                info["memory"]["MemTotal"] = f"{int(m.group(1)) // 1024} MB"
-            # 内存插槽占用
-            m = re.search(r"Memory slots populated: (\d+)/(\d+)", line)
-            if m and not info["memory"].get("slots"):
-                info["memory"]["slots"] = f"{m.group(1)}/{m.group(2)}"
-            # CPU 型号(model name 或 smpboot CPU0)
-            m = re.search(r"model name\s*:\s*(.+)", line)
-            if m and not info["cpu"]:
-                info["cpu"] = m.group(1).strip()
-            m = re.search(r"smpboot: CPU0: ([\w ():,.-]+)", line)
-            if m and not info["cpu"]:
-                info["cpu"] = m.group(1).strip()
-            # NVIDIA 平台线索(ACPI 表)
-            if "NVIDIA" in line and not info["gpu"] and ("NVSDEV" in line or "NBCI" in line):
-                info["gpu"] = "NVIDIA 平台(ACPI 表存在)"
-            # 显卡(PCI VGA/3D/Display controller)
-            m = re.search(r"(?:VGA compatible controller|3D controller|Display controller):\s*(.+)", line)
-            if m and not info["gpu"]:
-                info["gpu"] = m.group(1).strip()
-            # 显卡 vendor ID(10de=NVIDIA / 1002=AMD / 8086=Intel)
-            m = re.search(r"\[(10de|1002|8086):[\da-f]{4}\]", line)
-            if m and not info["gpu"] and ("VGA" in line or "3D" in line or "Display" in line):
-                vendor = {"10de": "NVIDIA", "1002": "AMD", "8086": "Intel"}[m.group(1)]
-                info["gpu"] = f"{vendor} 显卡 (PCI ID {m.group(0).strip('[]')})"
-            # 显卡(PCI class 0x030000=VGA / 0x030200=3D 格式):pci 0000:e1:00.0: [10de:1ff2] type 00 class 0x030000
-            m = re.search(r"\[(10de|1002|8086):([\da-f]{4})\] type \d+ class 0x0(?:30000|30200)", line)
-            if m and not info["gpu"]:
-                vendor = {"10de": "NVIDIA", "1002": "AMD", "8086": "Intel"}[m.group(1)]
-                dev = m.group(2)
-                model = {"1ff2": "RTX A4000", "2230": "RTX A6000", "2206": "RTX A5000",
-                         "2504": "RTX A2000", "2684": "RTX 4090", "2687": "RTX 3090",
-                         "2203": "RTX A6000", "26b9": "RTX A4000 Ada", "2531": "RTX A4500 Ada"}.get(dev, "")
-                info["gpu"] = f"{vendor} 显卡{(' ' + model) if model else ''} (PCI ID {m.group(1)}:{dev})"
-            # NVRM 驱动版本(NVIDIA)
-            m = re.search(r"NVRM: loading NVIDIA .*?Kernel Module ([\d.]+)", line)
-            if m and not info["nvidia_driver"]:
-                info["nvidia_driver"] = f"NVRM {m.group(1)}"
-            # CPU 频率
-            m = re.search(r"tsc: Detected ([\d.]+) MHz processor", line)
-            if m and not info.get("cpu_freq"):
-                info["cpu_freq"] = f"{m.group(1)} MHz"
-            # 网卡(PCI Ethernet controller)
-            m = re.search(r"Ethernet controller:\s*(.+)", line)
-            if m and m.group(1).strip() not in info["nics"]:
-                info["nics"].append(m.group(1).strip())
-            # 网卡名(eth0/eno1/enpXsY)去重
-            m = re.search(r"\b(eth\d+|eno\d+|enp\S+):", line)
-            if m and m.group(1) not in info["nics"]:
-                info["nics"].append(m.group(1))
-            # 硬盘(块设备 sda/sdb/nvme0n1 + 容量,按设备名去重,保留首次非 0 值)
-            m = re.search(r"\[(s[a-z]+|nvme\d+n\d+)\]\s+\d+ 512-byte logical blocks: \(([\d.]+ \w+)/([\d.]+ \w+)\)", line)
-            if m:
-                dev, cap = m.group(1), m.group(3)
-                if dev not in disk_map or disk_map[dev] == "0 B":
-                    disk_map[dev] = cap
-            # 磁盘接口类型(SATA link up 优先 / NVMe 兜底)
-            m = re.search(r"ata\d+: SATA link up ([\d.]+ Gbps)", line)
-            if m:
-                info["disk_interface"] = f"SATA ({m.group(1)})"
-            elif not info.get("disk_interface") and "nvme" in line.lower():
-                info["disk_interface"] = "NVMe"
-            # USB 设备(New USB device found + Product,去重限 8 个;dmesg + kern.log 合并)
-            usb_lines = klines if usb_src is None or usb_src == kern else klines + read_lines(usb_src)
-            for ul in usb_lines:
-                if "New USB device found" in ul:
-                    m2 = re.search(r"usb [\w-]+: New USB device found, idVendor=([\da-f]{4}), idProduct=([\da-f]{4})", ul)
-                    if m2:
-                        usb_seen.add(f"{m2.group(1)}:{m2.group(2)}")
-                if "Product:" in ul and "usb" in ul.lower():
-                    m2 = re.search(r"Product:\s*(.+)", ul)
-                    if m2 and len(info["usb"]) < 8:
-                        prod = m2.group(1).strip()
-                        if prod not in info["usb"]:
-                            info["usb"].append(prod)
-            # 安全启动 / 架构
-            m = re.search(r"secureboot: Secure boot (\w+)", line)
-            if m and not info["secureboot"]:
-                info["secureboot"] = m.group(1).lower()
-            m = re.search(r"Detected architecture (\S+)", line)
-            if m and not info["arch"]:
-                info["arch"] = m.group(1).rstrip(".")
-
-    # ── dpkg.log:OS 补丁级 / NVIDIA 驱动包 ──
-    dpkg = find_log("dpkg.log")
-    if dpkg:
-        for line in read_lines(dpkg):
-            m = re.search(r"install (linux-image-[\w.+-]+):", line)
-            if m and not info["os_info"].get("kernel_pkg"):
-                info["os_info"]["kernel_pkg"] = m.group(1)
-            m = re.search(r"install (nvidia-driver-[\d.]+[^:]*|nvidia-kernel-open-[\d.]+):", line)
-            if m and not info["nvidia_driver"]:
-                info["nvidia_driver"] = m.group(1)
-
-    # ── Xorg.0.log:NVIDIA 显卡型号 / 驱动 ──
-    xorg = find_log("Xorg.0.log", "xorg.log")
-    if xorg:
-        for line in read_lines(xorg, 800):
-            m = re.search(r"NVIDIA\(0\):\s*(NVIDIA [\w ]+?) \(", line)
-            if m and (not info["gpu"] or info["gpu"].startswith("NVIDIA 平台")):
-                info["gpu"] = m.group(1).strip()
-            m = re.search(r"NVIDIA: (?:driver|module) version ([\d.]+)", line)
-            if m and not info["nvidia_driver"]:
-                info["nvidia_driver"] = m.group(1)
-
-    info["disks"] = [f"{d} ({c})" for d, c in disk_map.items()]
-
-    # ── syslog:软件/服务(桌面环境、Docker)──
-    syslog = find_log("syslog", "syslog.1", "messages")
-    if syslog:
-        for line in read_lines(syslog, 20000):
-            if "gdm" in line.lower() and "gdm-x-session" in line and not info["software"].get("desktop"):
-                info["software"]["desktop"] = "GNOME (GDM3 显示管理器)"
-            m = re.search(r"Docker daemon .*?version=([\d.]+)", line)
-            if m and not info["software"].get("docker"):
-                info["software"]["docker"] = f"Docker {m.group(1)}"
-            if not info["timezone"]:
-                m = re.search(r"[\dT+\-]*([+-]\d{2}:\d{2})", line)
-                if m and m.group(1) in ("+08:00", "+09:00", "-05:00", "+00:00"):
-                    info["timezone"] = f"UTC{m.group(1)}"
-
-    # ── auth.log:主要用户 ──
-    auth = find_log("auth.log", "auth.log.1")
-    if auth:
-        for line in read_lines(auth, 10000):
-            m = re.search(r"session opened for user (\w+)\(uid=(\d+)\)", line)
-            if m and m.group(2) in ("1000", "1001", "1002"):
-                info["software"]["user"] = f"{m.group(1)} (uid {m.group(2)})"
-                break
-            m = re.search(r"session opened for user (\w+)", line)
-            if m and m.group(1) not in ("root", "lightdm", "gdm"):
-                info["software"]["user"] = m.group(1)
-                break
-
-    return info
-
-
 def analyze_linux_overview(log_dir: Path) -> dict:
     """📄 Linux 系统概览：提取 OS/内核/硬件信息"""
     root = _find_sos_root(log_dir)
@@ -322,7 +114,6 @@ def analyze_linux_overview(log_dir: Path) -> dict:
 
     # Disk info from /proc/mounts or /etc/fstab
     disks = []
-    nics = []
     mounts_info = find_read('proc/mounts*', 20) or find_read('*fstab*', 10)
     if mounts_info:
         for line in mounts_info.split('\n'):
@@ -337,46 +128,17 @@ def analyze_linux_overview(log_dir: Path) -> dict:
             size_kb = round(f.stat().st_size / 1024, 1)
             file_list[rel] = {"size": f.stat().st_size, "kb": size_kb}
 
-    # ── /var/log 兜底提取(纯 var/log 包无 sosreport 结构时)──
-    vlog_used = False
-    if not os_info:
-        vlog = _extract_varlog_info(log_dir)
-        if vlog["os_info"]:
-            os_info = vlog["os_info"]
-            vlog_used = True
-        cpu_model = cpu_model or vlog["cpu"]
-        cpu_cores = cpu_cores or vlog["cpu_cores"]
-        mem = {**mem, **vlog["memory"]} if vlog["memory"] else mem
-        os_info["board"] = vlog["board"]
-        os_info["bios"] = vlog["bios"]
-        os_info["gpu"] = vlog["gpu"]
-        os_info["nvidia_driver"] = vlog["nvidia_driver"]
-        disks = disks or vlog["disks"]
-        nics = vlog["nics"]
-        os_info["secureboot"] = vlog["secureboot"]
-        os_info["arch"] = vlog["arch"]
-        os_info["timezone"] = vlog["timezone"]
-        os_info["usb"] = vlog["usb"]
-        os_info["disk_interface"] = vlog.get("disk_interface", "")
-        os_info["software"] = vlog["software"]
-        if vlog.get("cpu_freq"):
-            os_info["cpu_freq"] = vlog["cpu_freq"]
-        if vlog.get("bogo"):
-            os_info["bogo"] = vlog["bogo"]
-        # OS 名称解析:6.5.0-18.18~22.04.1 → "Ubuntu 22.04"
-        if not os_info.get("name") and os_info.get("os_release"):
-            m = re.search(r"~(2\d\.\d+)", os_info["os_release"])
-            if m:
-                os_info["name"] = f"Ubuntu {m.group(1)}"
-        # LTS 代号:22.04 → LTS (Jammy)
-        if not os_info.get("lts") and os_info.get("os_release"):
-            m = re.search(r"~(2\d\.\d+)", os_info["os_release"])
-            if m:
-                code = {"20.04": "Focal", "22.04": "Jammy", "24.04": "Noble"}.get(m.group(1))
-                if code:
-                    os_info["lts"] = f"LTS ({code})"
-        if vlog["board"] or vlog["bios"] or vlog["gpu"] or vlog["nvidia_driver"] or vlog["disks"] or vlog["nics"]:
-            vlog_used = True
+    # ③ 兜底：无 sosreport（纯 /var/log 包）——无 OS 名称（os-release 缺失）时从常规日志完整提取
+    varlog_fallback = False
+    if not os_info.get("pretty_name") and not os_info.get("name"):
+        fallback = _extract_varlog_info(log_dir)
+        if fallback.get("os_info") or fallback.get("cpu"):
+            os_info = fallback.get("os_info", {})
+            cpu_model = fallback.get("cpu", "")
+            cpu_cores = fallback.get("cpu_cores", "")
+            mem = fallback.get("memory", {}) or mem
+            disks = fallback.get("disks", []) or disks
+            varlog_fallback = True
 
     return {
         "title": "📄 Linux 系统概览",
@@ -385,15 +147,12 @@ def analyze_linux_overview(log_dir: Path) -> dict:
         "cpu_cores": cpu_cores,
         "memory": mem,
         "disks": disks,
-        "nics": nics,
+        "varlog_fallback": varlog_fallback,
         "files": file_list,
         "file_count": len(file_list),
-        "varlog_fallback": vlog_used,
         "summary": (
-            f"{os_info.get('pretty_name', os_info.get('name', os_info.get('os_release', 'Linux')))} | "
+            f"{os_info.get('pretty_name', os_info.get('name', 'Linux'))} | "
             f"内核 {os_info.get('kernel', '?')} | "
-            f"{os_info.get('board', '') or '?'} | "
-            f"BIOS {os_info.get('bios', '?')} | "
             f"{cpu_model or '?'} | "
             f"{mem.get('MemTotal', '?')}"
         ),
@@ -755,3 +514,162 @@ def analyze_linux_summary(log_dir: Path) -> dict:
             for k, v in results.items()
         },
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# _extract_varlog_info —— 纯 /var/log 包（无 sosreport）兜底提取（③ 2026-08-28 方案）
+# 触发：analyze_linux_overview 主路径 os_info 为空时
+# ═══════════════════════════════════════════════════════════════
+NVIDIA_GPU = {"1ff2": "RTX A4000", "2230": "RTX A6000", "2206": "RTX A5000",
+              "2504": "RTX A2000", "2684": "RTX 4090", "2687": "RTX 3090",
+              "26b9": "RTX A4000 Ada", "2531": "RTX A4500 Ada"}
+OS_MAP = {"~22.04": ("Ubuntu 22.04", "LTS (Jammy)"), "~20.04": ("Ubuntu 20.04", "LTS (Focal)"),
+          "~24.04": ("Ubuntu 24.04", "LTS (Noble)")}
+
+
+def _find_log(log_dir: Path, *names) -> Path:
+    """按名字优先级查找（dmesg 优先 kern.log——避免轮转文件先命中）。"""
+    for n in names:
+        for f in log_dir.rglob("*"):
+            if f.is_file() and f.name.lower() == n:
+                return f
+    return None
+
+
+def _extract_varlog_info(log_dir: Path) -> dict:
+    """从常规 /var/log 文件兜底提取系统/硬件信息（无 sosreport 场景）。"""
+    out = {"os_info": {}, "cpu": "", "cpu_cores": "", "memory": {}, "disks": [],
+           "nics": [], "varlog_fallback": True}
+
+    dmesg = _find_log(log_dir, "dmesg", "dmesg.0", "dmesg.log")
+    kern = _find_log(log_dir, "kern.log", "kern.log.1")
+    syslog = _find_log(log_dir, "syslog", "syslog.1")
+    dpkg = _find_log(log_dir, "dpkg.log", "dpkg.log.1")
+    auth = _find_log(log_dir, "auth.log", "auth.log.1")
+
+    def read_log(fp, max_kb=2048):
+        if not fp:
+            return ""
+        try:
+            size = fp.stat().st_size
+            with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                return f.read(min(size, max_kb * 1024))
+        except Exception:
+            return ""
+
+    txt = read_log(dmesg) or read_log(kern)
+    if not txt:
+        return out
+
+    oi = out["os_info"]
+    # 内核 + OS 版本
+    m = re.search(r"Linux version ([\w.+-]+) .*\(Ubuntu ([^)]+)\)", txt)
+    if m:
+        oi["kernel"] = m.group(1)
+        rel = m.group(2)
+        for key, (name, lts) in OS_MAP.items():
+            if key in rel:
+                oi["name"], oi["lts"] = name, lts
+                break
+        oi["os_release"] = rel
+    # 主机名（日志行第 3 字段）
+    m = re.search(r"^\w{3}\s+\d+\s+[\d:]+ (\S+)", txt, re.M)
+    if m:
+        oi["hostname"] = m.group(1)
+    # CPU 型号/核数/BogoMIPS
+    m = re.search(r"smpboot: CPU0: (.+)", txt)
+    if m:
+        out["cpu"] = m.group(1).strip()
+    m = re.search(r"smpboot: Total of (\d+) processors activated \(([\d.]+) BogoMIPS\)", txt)
+    if m:
+        out["cpu_cores"] = m.group(1)
+        oi["bogo"] = m.group(2)
+    m = re.search(r"tsc: Detected ([\d.]+) MHz processor", txt)
+    if m:
+        oi["cpu_freq"] = m.group(1) + " MHz"
+    # 内存
+    m = re.search(r"Memory: \d+K/(\d+)K available", txt)
+    if m:
+        total_kb = int(m.group(1))
+        out["memory"]["MemTotal"] = f"{total_kb // (1024*1024)} GB"
+    # 主板 / BIOS
+    m = re.search(r"DMI: ([\w ]+)/([\w]+)", txt)
+    if m:
+        oi["board"] = f"{m.group(1).strip()} ({m.group(2)})"
+    m = re.search(r"BIOS ([\w.]+) (\d{2}/\d{2}/\d{4})", txt)
+    if m:
+        oi["bios"] = f"{m.group(1)} ({m.group(2)})"
+    # 显卡（PCI ID → 型号推断）
+    m = re.search(r"\[(10de|1002|8086):([\da-f]{4})\] type \d+ class 0x0(?:30000|30200)", txt)
+    if m:
+        vid, dev = m.group(1), m.group(2)
+        model = NVIDIA_GPU.get(dev)
+        oi["gpu"] = f"NVIDIA 显卡 {model} (PCI ID {vid}:{dev})" if model else f"显卡 PCI ID {vid}:{dev}（未识别）"
+    # 显卡驱动（NVRM / dpkg nvidia）
+    m = re.search(r"NVRM: loading NVIDIA .*?Kernel Module ([\d.]+)", txt)
+    if m:
+        oi["nvidia_driver"] = m.group(1)
+    elif dpkg:
+        dm = re.search(r"install nvidia-driver-([\d.\-\w]+)", read_log(dpkg))
+        if dm:
+            oi["nvidia_driver"] = f"nvidia-driver-{dm.group(1)}"
+    # 硬盘（设备名去重——保留首个非 0 容量）
+    seen = set()
+    for m in re.finditer(r"\[(s[a-z]|nvme\d+n\d+)\]\s+\d+ 512-byte logical blocks: \(([\d.]+ \w+)/([\d.]+ \w+)\)", txt):
+        dev, cap = m.group(1), m.group(3)
+        if dev not in seen and cap != "0 B":
+            seen.add(dev)
+            out["disks"].append(f"{dev} ({cap})")
+    # 磁盘接口（SATA 优先）
+    m = re.search(r"ata\d+: SATA link up ([\d.]+ Gbps)", txt)
+    if m:
+        oi["disk_interface"] = f"SATA ({m.group(1)})"
+    # 网卡
+    nics = set()
+    for m in re.finditer(r"Ethernet controller:\s*(.+)", txt):
+        nics.add(m.group(1).strip())
+    if not nics:
+        for m in re.finditer(r"\b(eth\d+|eno\d+|enp\S+):", txt):
+            nics.add(m.group(1))
+    out["nics"] = sorted(nics)[:8]
+    # USB 设备（dmesg + kern.log 合并——去重限 8）
+    usb = []
+    usb_seen = set()
+    for src in (txt, read_log(kern)):
+        for m in re.finditer(r"New USB device found, idVendor=\S+.*?Product:\s*(.+)", src, re.S):
+            prod = m.group(1).strip()[:40]
+            if prod not in usb_seen:
+                usb_seen.add(prod)
+                usb.append(prod)
+            if len(usb) >= 8:
+                break
+        if len(usb) >= 8:
+            break
+    oi["usb"] = usb
+    # 安全启动 / 架构
+    m = re.search(r"secureboot: Secure boot (\w+)", txt)
+    if m:
+        oi["secureboot"] = m.group(1)
+    m = re.search(r"Detected architecture (\S+)\.?", txt)
+    if m:
+        oi["arch"] = m.group(1).rstrip(".")
+    # 时区（带时区日志）
+    m = re.search(r"([+-]\d{2}:\d{2})\"", read_log(syslog) or txt)
+    if m:
+        oi["timezone"] = f"UTC{m.group(1)}"
+    # 桌面环境 / Docker（syslog）
+    sys_txt = read_log(syslog)
+    if sys_txt and "gdm-x-session" in sys_txt:
+        oi.setdefault("software", {})["desktop"] = "GNOME (GDM3 显示管理器)"
+    m = re.search(r"Docker daemon .*?version=([\d.]+)", sys_txt)
+    if m:
+        oi.setdefault("software", {})["docker"] = f"Docker {m.group(1)}"
+    # 主要用户（auth.log——uid 1000-1002）
+    auth_txt = read_log(auth)
+    if auth_txt:
+        users = set(re.findall(r"session opened for user (\w+)\(uid=(\d+)\)", auth_txt))
+        for uname, uid in sorted(users, key=lambda x: x[1]):
+            if 1000 <= int(uid) <= 1002:
+                oi.setdefault("software", {})["user"] = f"{uname} (uid {uid})"
+                break
+    return out

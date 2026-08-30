@@ -228,6 +228,13 @@ async def list_files(request: Request, job_id: str):
     if not tslog.exists():
         return JSONResponse({"error": "日志目录不存在"}, status_code=404)
 
+    # Bug 5 修复：TS Log 包结构 GM10KT68/{Logs(evtx)+tslog(txt)+LAB}——tslog/ 只是报告子目录，
+    # 列表从完整日志根开始（不动 find_log_dir 避免破坏分析器）
+    list_root = tslog
+    if tslog.name == "tslog" and (tslog.parent / "Logs").is_dir():
+        list_root = tslog.parent
+    tslog = list_root
+
     def build_tree(path: Path, prefix: str = "") -> list:
         items = []
         try:

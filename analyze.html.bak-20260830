@@ -11,10 +11,10 @@
             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
         .header a { color: #58a6ff; text-decoration: none; font-size: 14px; }
         .header h1 { font-size: 18px; color: #f0f6fc; flex: 1; }
-        .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 46px); }
+        .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 52px); }
         @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }
         .sidebar { background: #161b22; padding: 16px; overflow-y: auto; }
-        .sidebar h3 { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+        .sidebar h3 { font-size: 14px; color: #8b949e; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
         .file-tree { font-size: 13px; }
         .tree-dir { color: #58a6ff; font-weight: 600; cursor: pointer; padding: 3px 0; display: flex; align-items: center; gap: 4px; }
         .tree-dir:hover { color: #79c0ff; }
@@ -43,7 +43,7 @@
             border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         /* Report styles (inherited from report.html) */
-        .card { background: #161b22; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
         .card h3 { font-size: 16px; color: #f0f6fc; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -170,7 +170,7 @@
 </head>
 <body>
     <div class="header">
-        <a href="/log-analyzer/">← 返回主界面</a>
+        <a href="/log-analyzer/">← 返回首页</a>
         <h1 id="page-title">🔬 日志分析中心</h1>
         <span style="font-size:12px;color:#8b949e;" id="job-id-display"></span>
     </div>
@@ -201,7 +201,6 @@
             <div class="tabs" id="tabs">
                 {% if os_type == 'linux' %}
                 <div class="tab" data-type="linux_overview">📄 系统概览</div>
-                <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
                 <span class="file-tabs-sep" id="file-tabs-sep" style="display:none;"></span>
                 <span id="file-tabs"></span>
                 {% if not is_guest %}<div class="tab ai-tab" data-type="chat">🤖 AI 分析</div>
@@ -250,6 +249,13 @@
                 var aiTab = document.querySelector('.tab[data-type="chat"]');
                 if (aiTab) aiTab.classList.add('active');
                 renderChat('api');
+            }, 100);
+        } else {
+            // 非 other 布局：初始化激活默认 tab + 自动加载（Bug 14——点击相同 tab 被跳过导致默认不加载）
+            setTimeout(function() {
+                var defTab = document.querySelector('.tab[data-type="' + currentType + '"]');
+                if (defTab) defTab.classList.add('active');
+                runAnalysis(currentType);
             }, 100);
         }
         let analysisCache = {};
@@ -391,7 +397,7 @@
             // Open first level dirs
             setTimeout(() => {
                 document.querySelectorAll('.tree-dir').forEach(d => {
-                    const childId = d.nextElementSibling ? d.nextElementSibling.id : null;
+                    const childId = d.nextElementSibling ? d.nextElementSibling.id : undefined;
                     if (childId) toggleDir(childId, true);
                 });
             }, 100);
@@ -432,14 +438,6 @@
                 }
             });
         });
-        // 初始化:激活默认 tab 并加载——优先直接读已有报告(立即出数据),报告不存在才触发分析
-        (function () {
-            var dt = document.querySelector('.tab[data-type="' + currentType + '"]');
-            if (dt) {
-                dt.classList.add('active');
-                if (!isOtherLayout) loadReportData(currentType);
-            }
-        })();
         async function runAnalysis(type) {
             if (type === 'chat') return;
             // Check cache
@@ -478,23 +476,17 @@
             }
             document.getElementById('tab-content').innerHTML = '<div class="alert alert-warning">分析超时，请重试</div>';
         }
-        function loadReportData(type, onMissing) {
+        function loadReportData(type) {
             document.getElementById('tab-content').innerHTML = '<div class="loading"><div class="spinner"></div><p>加载报告...</p></div>';
             fetch('../api/report/' + jobId + '?type=' + type)
-                .then(r => { if (!r.ok) throw { missing: true, status: r.status }; return r.json(); })
+                .then(r => r.json())
                 .then(data => {
                     analysisCache[jobId + '_' + type] = data;
                     renderResult(type, data);
                 })
                 .catch(err => {
-                    if (err && err.missing) {
-                        // 报告不存在(首次分析)→ 触发分析
-                        if (typeof onMissing === 'function') { onMissing(type); return; }
-                        runAnalysis(type);
-                    } else {
-                        document.getElementById('tab-content').innerHTML =
-                            '<div class="alert alert-critical">加载失败: ' + (err && err.message ? err.message : err) + '</div>';
-                    }
+                    document.getElementById('tab-content').innerHTML =
+                        '<div class="alert alert-critical">加载失败: ' + err.message + '</div>';
                 });
         }
         function renderResult(type, data) {
@@ -616,7 +608,7 @@
             html += `<div class="card"><h3>📁 诊断文件 (${data.text_file_count || 0} 个 + ${data.evtx_count || 0} 个 evtx)</h3><div class="file-list">`;
             for (const [name, info] of Object.entries(files)) {
                 const kb = info.size ? (info.size/1024).toFixed(1) : 0;
-                html += `<span class="file-chip" style="cursor:pointer" onclick="var _f=document.querySelector('.tree-file.clickable'); if(_f) _f.click()">${esc(name)} (${kb}KB)</span>`;
+                html += `<span class="file-chip" style="cursor:pointer" onclick="var el=document.querySelector('.tree-file.clickable'); if(el) el.click()">${esc(name)} (${kb}KB)</span>`;
             }
             html += '</div></div>';
             el.innerHTML = html || '<div class="alert alert-info">无数据</div>';
@@ -1075,46 +1067,45 @@
         function renderLinuxOverview(data) {
             const el = document.getElementById('tab-content');
             const os = data.os_info || {};
-            const sw = os.software || {};
-            let html = '';
-
-            // ── 🖥️ 系统信息 ──
-            html += '<div class="card"><h3>🖥️ 系统信息</h3><div style="font-size:13px;line-height:1.9;">';
-            const osRows = [
-                ['操作系统', (os.name || os.pretty_name || '') + (os.lts ? ' ' + esc(os.lts) : '')],
-                ['内核', os.kernel ? esc(os.kernel) + (os.os_release ? '（' + esc(os.os_release) + '）' : '') : ''],
-                ['主机名', os.hostname],
-                ['桌面环境', sw.desktop],
-                ['安全启动', os.secureboot === 'disabled' ? '已禁用（Secure boot disabled）' : (os.secureboot ? esc(os.secureboot) : '')],
-                ['时区', os.timezone === 'UTC+08:00' ? 'UTC+8（东八区）' : (os.timezone ? esc(os.timezone) : '')],
-                ['架构', os.arch],
-            ];
-            for (const [l, v] of osRows) if (v) html += `<div><span style="color:#8b949e;">${l}：</span><strong>${v}</strong></div>`;
+            const hwRows = [
+                ['CPU', data.cpu ? `${data.cpu} × ${data.cpu_cores || '?'} 核${os.bogo ? `（${os.bogo} BogoMIPS）` : ''}` : null],
+                ['内存', data.memory && data.memory.MemTotal ? data.memory.MemTotal : null],
+                ['显卡', os.gpu || null],
+                ['显卡驱动', os.nvidia_driver || null],
+                ['主板', os.board || null],
+                ['BIOS', os.bios || null],
+                ['硬盘', (data.disks && data.disks.length) ? data.disks.join(' / ') : null],
+                ['磁盘接口', os.disk_interface || null],
+                ['网络', (data.nics && data.nics.length) ? data.nics.join(', ') : null],
+                ['USB 设备', (os.usb && os.usb.length) ? os.usb.join(', ') : null]
+            ].filter(r => r[1]);
+            let html = '<div class="card"><h3>🖥️ 系统信息</h3><div class="grid-2">';
+            const sysRows = [
+                ['操作系统', os.pretty_name || os.name || null],
+                ['发行版', os.lts ? `${os.name} ${os.lts}` : null],
+                ['内核', os.kernel || null],
+                ['主机名', os.hostname || null],
+                ['架构', os.arch || null],
+                ['安全启动', os.secureboot || null],
+                ['时区', os.timezone || null],
+                ['运行时间', os.uptime || null],
+                ['CPU 频率', os.cpu_freq || null],
+                ['OS 版本', os.os_release || null]
+            ].filter(r => r[1]);
+            for (const [l, v] of sysRows) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
             html += '</div></div>';
-
-            // ── 🔩 硬件信息(表格)──
-            const hw = [];
-            if (data.cpu) hw.push(['CPU', `${esc(data.cpu)} × ${data.cpu_cores || '?'} 核${os.cpu_freq ? '，' + esc(os.cpu_freq) : ''}${os.bogo ? '（' + esc(os.bogo) + ' BogoMIPS）' : ''}`]);
-            if (data.memory && data.memory.MemTotal) hw.push(['内存', `约 ${esc(data.memory.MemTotal)}${data.memory.slots ? '（插槽 ' + esc(data.memory.slots) + '）' : ''}`]);
-            if (os.gpu) hw.push(['显卡', esc(os.gpu) + (os.nvidia_driver ? '，驱动 ' + esc(os.nvidia_driver) : '')]);
-            if (data.disks && data.disks.length) hw.push(['数据盘', `${data.disks.map(d => esc(d)).join(' / ')}${os.disk_interface ? '（' + esc(os.disk_interface) + '）' : ''}`]);
-            if (data.nics && data.nics.length) hw.push(['网络', data.nics.map(n => esc(n)).join(' / ')]);
-            if (os.usb && os.usb.length) hw.push(['USB 设备', os.usb.map(u => esc(u)).join(' / ')]);
-            if (hw.length) {
-                html += '<div class="card"><h3>🔩 硬件信息</h3><table><thead><tr><th style="width:110px;">部件</th><th>详情</th></tr></thead><tbody>';
-                for (const [k, v] of hw) html += `<tr><td style="font-weight:600;white-space:nowrap;">${k}</td><td>${v}</td></tr>`;
+            if (hwRows.length) {
+                html += '<div class="card"><h3>🔩 硬件信息</h3><table style="width:100%;font-size:13px;"><tbody>';
+                for (const [l, v] of hwRows) html += `<tr><td style="color:#8b949e;padding:5px 8px;width:110px;vertical-align:top;">${l}</td><td style="padding:5px 8px;"><strong>${esc(v)}</strong></td></tr>`;
                 html += '</tbody></table></div>';
             }
-
-            // ── 📦 软件信息 ──
+            const sw = os.software || {};
             if (Object.keys(sw).length) {
-                const labels = { docker: 'Docker', desktop: '桌面环境', user: '主要用户' };
-                html += '<div class="card"><h3>📦 软件信息</h3><div style="font-size:13px;line-height:1.9;">';
-                for (const [k, v] of Object.entries(sw)) html += `<div><span style="color:#8b949e;">${labels[k] || k}：</span><strong>${esc(v)}</strong></div>`;
+                html += '<div class="card"><h3>📦 软件信息</h3><div class="grid-2">';
+                for (const [l, v] of Object.entries(sw)) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
                 html += '</div></div>';
             }
-
-            // ── 📁 日志文件 ──
+            if (data.varlog_fallback) html += '<div style="font-size:11px;color:#8b949e;margin-bottom:8px;">⚠️ 无 sosreport——信息从 /var/log 常规日志兜底提取</div>';
             html += `<div class="card"><h3>📁 日志文件 (${data.file_count || 0} 个)</h3><div class="file-list">`;
             for (const [name, info] of Object.entries(data.files || {}).slice(0, 30))
                 html += `<span class="file-chip">${esc(name)} (${info.kb}KB)</span>`;
