@@ -1,4 +1,4 @@
-## v3.6 — 2026-08-30（Linux 分析精简 + varlog 兜底修复 + 界面同步 106.54.193.9）
+## v3.6 — 2026-08-30（Linux 分析精简 + varlog 兜底修复 + 界面同步 <公网入口IP>）
 
 ### 修复
 
@@ -7,7 +7,7 @@
   - 返回结构补 `varlog_fallback` 字段（前端显示"⚠️ 无 sosreport——信息从 /var/log 常规日志兜底提取"）
   - 实测：纯 var/log 包（dmesg/kern.log/syslog/dpkg.log/auth.log）→ Ubuntu 22.04 / Xeon 5418Y 96核 / 511GB / RTX A4000 / 主板 / BIOS / USB / Docker 全字段提取
 
-### 同步（106.54.193.9 部署实例——界面一致）
+### 同步（<公网入口IP> 部署实例——界面一致）
 
 - **Linux 分析页选项卡精简**（6 → 3）：系统概览 / AI 分析 / 深度分析（内核诊断/系统日志/整体总结入口移除——渲染函数保留）
 - **Linux 默认 tab**：linux_summary → linux_overview（进入即系统概览）
