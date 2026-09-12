@@ -1,3 +1,15 @@
+## v3.9 — 2026-09-11（DMP 解析线程化 + AI key 修复 + 默认视图优化）
+
+### 修复
+
+- **DMP 解析 to_thread**：`/api/file-content` 的 .dmp 分支 + `/api/dump-detail` 两处 `parse_single_dump()` 同步调用改为 `asyncio.to_thread`——async 接口内文件 IO 不再阻塞事件循环（打开大 DMP 不拖慢其他请求）
+- **AI 分析 Bearer 空 key**：main.py 不加载 .env → 进程无 DEEPSEEK_API_KEY → AI 分析报 `legal header value b'Bearer`，AI 总结卡 `analyzing_summary`（progress 10）永不完成。修复：main.py 顶部 `load_dotenv()` + venv 补装 python-dotenv
+
+### 优化
+
+- **分析页默认视图**：打开 job 默认「📄 系统概览」（本地生成、秒开）；「📊 整体总结」等 AI 分析**不自动触发**（点击 tab 才跑）——避免一打开页面就转圈等 AI
+- 主题变量收敛：IDG 硬编码颜色 → CSS 变量（为后续主题能力打基础）
+
 ## v3.8 — 2026-08-30（文件预览修复 + 布局优化 + HTML 渲染）
 
 ### 修复

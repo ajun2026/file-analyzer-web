@@ -6,75 +6,76 @@
     <title>IDG 日志诊断分析系统</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
+        :root { --bg: #0d1117; --surface: #161b22; --text: #e6edf3; --text2: #8b949e; --info: #58a6ff; --border: #30363d; }
+  body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-            background: #0d1117;
-            color: #c9d1d9; min-height: 100vh;
+            background: var(--bg, var(--bg));
+            color: var(--text); min-height: 100vh;
         }
         .container { width: 100%; padding: 24px 28px; box-sizing: border-box; }
-        .subtitle { color: #8b949e; font-size: 15px; margin-bottom: 20px; }
+        .subtitle { color: var(--text2); font-size: 15px; margin-bottom: 20px; }
         .upload-zone {
-            display: block; border: 2px dashed #30363d; border-radius: 12px; padding: 60px 30px;
-            cursor: pointer; transition: all 0.2s; background: #161b22; margin-bottom: 24px; text-align: center;
+            display: block; border: 2px dashed var(--border); border-radius: 12px; padding: 60px 30px;
+            cursor: pointer; transition: all 0.2s; background: var(--surface); margin-bottom: 24px; text-align: center;
         }
-        .upload-zone:hover, .upload-zone.dragover { border-color: #58a6ff; background: #1c2333; }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--info); background: var(--surface2); }
         .upload-zone .icon { font-size: 56px; margin-bottom: 16px; opacity: 0.6; }
-        .upload-zone p { font-size: 16px; color: #8b949e; }
-        .upload-zone .formats { font-size: 13px; color: #484f58; margin-top: 8px; }
+        .upload-zone p { font-size: 16px; color: var(--text2); }
+        .upload-zone .formats { font-size: 13px; color: var(--text2); margin-top: 8px; }
         #file-input { display: none; }
         .progress-wrap { display: none; margin-top: 16px; }
-        .progress-bar { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #238636, #3fb950); border-radius: 3px; transition: width 0.3s; }
-        .progress-text { font-size: 13px; color: #8b949e; margin-top: 8px; }
-        .error-box { display: none; background: #490202; border: 1px solid #f85149; border-radius: 8px; padding: 16px; margin-top: 16px; color: #f85149; font-size: 14px; text-align: left; }
+        .progress-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #238636, var(--success)); border-radius: 3px; transition: width 0.3s; }
+        .progress-text { font-size: 13px; color: var(--text2); margin-top: 8px; }
+        .error-box { display: none; background: #490202; border: 1px solid var(--error); border-radius: 8px; padding: 16px; margin-top: 16px; color: var(--error); font-size: 14px; text-align: left; }
 
         /* SN Modal */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
         .modal-overlay.open { display: flex; }
-        .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+        .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
             max-width: 440px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             animation: modalIn 0.2s ease-out; }
         @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(-10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         .modal-header { padding: 20px 24px 0; }
-        .modal-header h2 { font-size: 18px; color: #f0f6fc; }
-        .modal-header .file-hint { font-size: 13px; color: #8b949e; margin-top: 6px; line-height: 1.5; }
+        .modal-header h2 { font-size: 18px; color: var(--text); }
+        .modal-header .file-hint { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.5; }
         .modal-body { padding: 20px 24px; }
-        .modal-body label { display: block; font-size: 14px; color: #8b949e; margin-bottom: 8px; }
-        .modal-body input { width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
-            padding: 10px 14px; color: #c9d1d9; font-size: 15px;
+        .modal-body label { display: block; font-size: 14px; color: var(--text2); margin-bottom: 8px; }
+        .modal-body input { width: 100%; background: var(--bg, var(--bg)); border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 14px; color: var(--text); font-size: 15px;
             font-family: "SF Mono", "Fira Code", monospace; outline: none;
             transition: border-color 0.2s; text-align: center; letter-spacing: 1px; }
-        .modal-body input:focus { border-color: #58a6ff; }
-        .modal-body input::placeholder { color: #484f58; letter-spacing: 0; }
+        .modal-body input:focus { border-color: var(--info); }
+        .modal-body input::placeholder { color: var(--text2); letter-spacing: 0; }
         .modal-footer { padding: 0 24px 20px; display: flex; gap: 10px; justify-content: flex-end; }
-        .btn-cancel { background: #21262d; color: #8b949e; border: 1px solid #30363d; padding: 9px 20px;
+        .btn-cancel { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); padding: 9px 20px;
             border-radius: 8px; font-size: 14px; cursor: pointer; transition: all 0.15s; }
-        .btn-cancel:hover { background: #30363d; color: #c9d1d9; }
-        .btn-confirm { background: #1f6feb; color: #fff; border: none; padding: 9px 24px;
+        .btn-cancel:hover { background: var(--border); color: var(--text); }
+        .btn-confirm { background: var(--info); color: #fff; border: none; padding: 9px 24px;
             border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .btn-confirm:hover { background: #388bfd; }
         .btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* History section */
         .history-section { margin-top: 48px; text-align: left; }
-        .history-section h2 { font-size: 20px; color: #f0f6fc; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        .history-section h2 { font-size: 20px; color: var(--text); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--surface2); }
         .history-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        .history-table th { color: #8b949e; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
-        .history-table td { padding: 12px; border-bottom: 1px solid #21262d36; vertical-align: middle; }
-        .history-table tr:hover { background: #161b22; }
-        .history-table tr:hover td:first-child { border-left: 3px solid #58a6ff; }
-        .history-table .name { color: #58a6ff; font-weight: 600; cursor: pointer; text-decoration: none; }
+        .history-table th { color: #484f58; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--surface2); font-size: 13px; }
+        .history-table td { padding: 12px; border-bottom: 1px solid var(--surface2)36; vertical-align: middle; }
+        .history-table tr:hover { background: var(--surface); }
+        .history-table tr:hover td:first-child { border-left: 3px solid var(--info); }
+        .history-table .name { color: var(--info); font-weight: 600; cursor: pointer; text-decoration: none; }
         .history-table .name:hover { text-decoration: underline; }
-        .history-table .meta { color: #8b949e; font-size: 12px; }
+        .history-table .meta { color: var(--text2); font-size: 12px; }
         .history-table .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; }
-        .badge-dump { background: #490202; color: #f85149; }
-        .badge-siolog { background: #2e1e00; color: #d29922; }
-        .badge-events { background: #0d2b4e; color: #58a6ff; }
-        .empty-history { color: #484f58; font-size: 14px; text-align: center; padding: 40px 0; }
-        .btn-delete { background: none; border: 1px solid #30363d; color: #8b949e; padding: 4px 10px; border-radius: 6px;
+        .badge-dump { background: #490202; color: var(--error); }
+        .badge-siolog { background: #2e1e00; color: var(--warn); }
+        .badge-events { background: #0d2b4e; color: var(--info); }
+        .empty-history { color: var(--text2); font-size: 14px; text-align: center; padding: 40px 0; }
+        .btn-delete { background: none; border: 1px solid var(--border); color: var(--text2); padding: 4px 10px; border-radius: 6px;
             cursor: pointer; font-size: 12px; transition: all 0.2s; }
-        .btn-delete:hover { color: #f85149; border-color: #f85149; background: #490202; }
+        .btn-delete:hover { color: var(--error); border-color: var(--error); background: #490202; }
         .btn-delete:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
 </head>
@@ -142,10 +143,10 @@
         function escHtml(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
         function formatMB(bytes) { return bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KB' : (bytes / 1048576).toFixed(1) + ' MB'; }
         function osTypeBadge(osType) {
-            if (osType === 'windows') return '<span class="badge" style="background:#0d2b4e;color:#58a6ff;">🪟 Windows</span>';
-            if (osType === 'linux') return '<span class="badge" style="background:#0d3320;color:#3fb950;">🐧 Linux</span>';
-            if (osType === 'bmc') return '<span class="badge" style="background:#2e1e00;color:#d29922;">🔧 BMC</span>';
-            return '<span class="badge" style="background:#21262d;color:#8b949e;">📁 ' + escHtml(osType || '未知') + '</span>';
+            if (osType === 'windows') return '<span class="badge" style="background:#0d2b4e;color:var(--info);">🪟 Windows</span>';
+            if (osType === 'linux') return '<span class="badge" style="background:#0d3320;color:var(--success);">🐧 Linux</span>';
+            if (osType === 'bmc') return '<span class="badge" style="background:#2e1e00;color:var(--warn);">🔧 BMC</span>';
+            return '<span class="badge" style="background:var(--surface2);color:var(--text2);">📁 ' + escHtml(osType || '未知') + '</span>';
         }
 
         // ── Render history table ──
@@ -163,7 +164,7 @@
                 if (h.dump) badges += '<span class="badge badge-dump">💾 Dump</span>';
                 if (h.siolog) badges += '<span class="badge badge-siolog">📋 SIO</span>';
                 if (h.evtx_count > 0) badges += '<span class="badge badge-events">📝 ' + h.evtx_count + ' evtx</span>';
-                var snDisplay = h.sn ? '<span style="font-family:\'SF Mono\',\'Fira Code\',monospace;color:#58a6ff;font-size:13px;">' + escHtml(h.sn) + '</span>' : '<span style="color:#484f58;">-</span>';
+                var snDisplay = h.sn ? '<span style="font-family:\'SF Mono\',\'Fira Code\',monospace;color:var(--info);font-size:13px;">' + escHtml(h.sn) + '</span>' : '<span style="color:var(--text2);">-</span>';
                 html += '<tr>' +
                     '<td><a class="name" href="analyze/' + h.job_id + '">' + escHtml(h.name || h.filename) + '</a></td>' +
                     '<td>' + snDisplay + '</td>' +
@@ -218,7 +219,7 @@
             var sn = snInput.value.trim();
             if (!sn) {
                 snInput.focus();
-                snInput.style.borderColor = '#f85149';
+                snInput.style.borderColor = 'var(--error)';
                 setTimeout(function() { snInput.style.borderColor = ''; }, 1500);
                 return;
             }

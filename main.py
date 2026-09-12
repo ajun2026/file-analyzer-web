@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Log Analyzer — FastAPI entry point."""
 import json, os, uuid, threading, subprocess, shutil, re, asyncio
+from dotenv import load_dotenv
+# 加载 .env（AI key/BASE_URL——2026-09-08 修复：之前 main.py 不加载 .env → AI 分析 Bearer 空 key → 总结卡 analyzing_summary）
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -318,7 +321,7 @@ async def get_file_content(request: Request, job_id: str, path: str = ""):
     if ext == '.dmp':
         if size == 0:
             return JSONResponse({"error": "DMP 文件为空"}, status_code=400)
-        info = parse_single_dump(filepath, tslog)
+        info = await asyncio.to_thread(parse_single_dump, filepath, tslog)  # 铁律：async 内文件 IO 必须 to_thread（不阻塞事件循环）
         text_lines = [f"=== {info['filename']} ===",
                       f"大小: {info['size_kb']} KB ({info['size_mb']} MB)",
                       f"类型: {info.get('dump_type', '未知')}"]
@@ -401,7 +404,7 @@ async def get_dump_detail(request: Request, job_id: str, file: str = ""):
         return JSONResponse({"error": "非法路径"}, status_code=403)
     if not filepath.exists() or filepath.suffix.lower() != '.dmp':
         return JSONResponse({"error": "不是有效的 .dmp 文件"}, status_code=400)
-    result = parse_single_dump(filepath)
+    result = await asyncio.to_thread(parse_single_dump, filepath)  # 铁律：async 内文件 IO 必须 to_thread
     return JSONResponse(result)
 
 

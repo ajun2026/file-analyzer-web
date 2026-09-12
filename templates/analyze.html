@@ -5,165 +5,166 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>日志分析中心</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.6; min-height: 100vh; }
-        .header { background: #161b22; padding: 10px 16px; position: sticky; top: 0; z-index: 10;
+  :root { --bg: #0d1117; --surface: #161b22; --surface2: #21262d; --border: #30363d; --text: #e6edf3; --text2: #8b949e; --info: #58a6ff; --success: #3fb950; --warn: #d29922; --error: #f85149; --heading: #f0f6fc; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+        .header { background: var(--surface); padding: 10px 16px; position: sticky; top: 0; z-index: 10;
             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-        .header a { color: #58a6ff; text-decoration: none; font-size: 14px; }
-        .header h1 { font-size: 18px; color: #f0f6fc; flex: 1; }
+        .header a { color: var(--info); text-decoration: none; font-size: 14px; }
+        .header h1 { font-size: 18px; color: var(--heading); flex: 1; }
         .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 46px); }
         @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }
-        .sidebar { background: #161b22; padding: 16px; overflow-y: auto; }
-        .sidebar h3 { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+        .sidebar { background: var(--surface); padding: 16px; overflow-y: auto; }
+        .sidebar h3 { font-size: 14px; color: var(--text2); margin-bottom: 12px; }
         .file-tree { font-size: 13px; }
-        .tree-dir { color: #58a6ff; font-weight: 600; cursor: pointer; padding: 3px 0; display: flex; align-items: center; gap: 4px; }
+        .tree-dir { color: var(--info); font-weight: 600; cursor: pointer; padding: 3px 0; display: flex; align-items: center; gap: 4px; }
         .tree-dir:hover { color: #79c0ff; }
         .tree-dir .arrow { font-size: 10px; width: 12px; display: inline-block; transition: transform 0.15s; }
         .tree-dir .arrow.open { transform: rotate(90deg); }
-        .tree-file { color: #8b949e; padding: 2px 0 2px 20px; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px;
+        .tree-file { color: var(--text2); padding: 2px 0 2px 20px; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px;
             display: flex; justify-content: space-between; }
         .tree-file .cat { font-size: 10px; padding: 1px 6px; border-radius: 8px; }
-        .cat-events { background: #0d2b4e; color: #58a6ff; }
-        .cat-dump { background: #490202; color: #f85149; }
-        .cat-hardware { background: #0d3320; color: #3fb950; }
-        .cat-siolog { background: #2e1e00; color: #d29922; }
-        .cat-text { background: #21262d; color: #8b949e; }
+        .cat-events { background: #0d2b4e; color: var(--info); }
+        .cat-dump { background: #490202; color: var(--error); }
+        .cat-hardware { background: #0d3320; color: var(--success); }
+        .cat-siolog { background: #2e1e00; color: var(--warn); }
+        .cat-text { background: var(--surface2); color: var(--text2); }
         .tree-children { display: none; padding-left: 12px; }
         .tree-children.open { display: block; }
-        .file-count { font-size: 11px; color: #484f58; }
+        .file-count { font-size: 11px; color: var(--text2); }
         .main { padding: 24px; }
-        .tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; border-bottom: 1px solid #21262d; padding-bottom: 12px; }
-        .tab { padding: 8px 20px; border-radius: 6px 6px 0 0; font-size: 14px; cursor: pointer; background: #21262d; color: #8b949e;
+        .tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; border-bottom: 1px solid var(--surface2); padding-bottom: 12px; }
+        .tab { padding: 8px 20px; border-radius: 6px 6px 0 0; font-size: 14px; cursor: pointer; background: var(--surface2); color: var(--text2);
             border: 1px solid transparent; transition: all 0.15s; white-space: nowrap; }
-        .tab:hover { color: #c9d1d9; border-color: #30363d; }
-        .tab.active { background: #0d1117; color: #58a6ff; border-color: #1f6feb; border-bottom-color: #0d1117; font-weight: 600; }
+        .tab:hover { color: #c9d1d9; border-color: var(--border); }
+        .tab.active { background: var(--bg); color: var(--info); border-color: var(--info); border-bottom-color: var(--bg); font-weight: 600; }
         .tab-content { min-height: 300px; }
-        .loading { text-align: center; padding: 60px; color: #8b949e; }
-        .loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #21262d; border-top-color: #58a6ff;
+        .loading { text-align: center; padding: 60px; color: var(--text2); }
+        .loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--surface2); border-top-color: var(--info);
             border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         /* Report styles (inherited from report.html) */
-        .card { background: #161b22; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-        .card h3 { font-size: 16px; color: #f0f6fc; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        .card { background: var(--surface); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .card h3 { font-size: 16px; color: var(--text); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--surface2); }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
-        th { color: #8b949e; font-weight: 600; }
+        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--surface2); }
+        th { color: var(--text2); font-weight: 600; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-        .badge-critical { background: #490202; color: #f85149; }
-        .badge-error { background: #3d1e00; color: #d29922; }
-        .badge-info { background: #0d2b4e; color: #58a6ff; }
-        .badge-ok { background: #0d3320; color: #3fb950; }
-        .badge-warning { background: #3d1e00; color: #d29922; }
+        .badge-critical { background: #490202; color: var(--error); }
+        .badge-error { background: #3d1e00; color: var(--warn); }
+        .badge-info { background: #0d2b4e; color: var(--info); }
+        .badge-ok { background: #0d3320; color: var(--success); }
+        .badge-warning { background: #3d1e00; color: var(--warn); }
         .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
-        .alert-critical { background: #490202; border: 1px solid #f85149; color: #f85149; }
-        .alert-warning { background: #3d1e00; border: 1px solid #d29922; color: #d29922; }
-        .alert-info { background: #0d2b4e; border: 1px solid #58a6ff; color: #58a6ff; }
-        .alert-ok { background: #0d3320; border: 1px solid #3fb950; color: #3fb950; }
+        .alert-critical { background: #490202; border: 1px solid var(--error); color: var(--error); }
+        .alert-warning { background: #3d1e00; border: 1px solid var(--warn); color: var(--warn); }
+        .alert-info { background: #0d2b4e; border: 1px solid var(--info); color: var(--info); }
+        .alert-ok { background: #0d3320; border: 1px solid var(--success); color: var(--success); }
         .alert-summary { padding: 20px; font-size: 15px; line-height: 1.8; }
         .alert-summary h3 { font-size: 20px; margin-bottom: 16px; }
         .event-list { max-height: 500px; overflow-y: auto; }
-        .event-item { padding: 8px 12px; border-bottom: 1px solid #21262d36; font-size: 13px; font-family: "SF Mono", "Fira Code", monospace; }
-        .stat-box { text-align: center; padding: 16px; background: #0d1117; border-radius: 8px; }
-        .stat-box .number { font-size: 32px; font-weight: 700; color: #f0f6fc; }
-        .stat-box .label { font-size: 13px; color: #8b949e; margin-top: 4px; }
+        .event-item { padding: 8px 12px; border-bottom: 1px solid var(--surface2)36; font-size: 13px; font-family: "SF Mono", "Fira Code", monospace; }
+        .stat-box { text-align: center; padding: 16px; background: var(--bg); border-radius: 8px; }
+        .stat-box .number { font-size: 32px; font-weight: 700; color: var(--text); }
+        .stat-box .label { font-size: 13px; color: var(--text2); margin-top: 4px; }
         .file-list { display: flex; flex-wrap: wrap; gap: 8px; }
-        .file-chip { background: #21262d; padding: 4px 12px; border-radius: 14px; font-size: 12px; color: #8b949e; }
+        .file-chip { background: var(--surface2); padding: 4px 12px; border-radius: 14px; font-size: 12px; color: var(--text2); }
         /* File preview modal */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100;
             justify-content: center; align-items: center; }
         .modal-overlay.open { display: flex; }
-        .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; max-width: 900px; width: 90%; max-height: 85vh;
+        .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 900px; width: 90%; max-height: 85vh;
             display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #21262d; }
-        .modal-header h2 { font-size: 16px; color: #f0f6fc; }
-        .modal-close { background: none; border: none; color: #8b949e; font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
-        .modal-close:hover { color: #f0f6fc; background: #21262d; }
-        .modal-meta { font-size: 12px; color: #484f58; padding: 8px 20px; background: #0d1117; border-bottom: 1px solid #21262d; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--surface2); }
+        .modal-header h2 { font-size: 16px; color: var(--heading); }
+        .modal-close { background: none; border: none; color: var(--text2); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+        .modal-close:hover { color: var(--text); background: var(--surface2); }
+        .modal-meta { font-size: 12px; color: var(--text2); padding: 8px 20px; background: var(--bg); border-bottom: 1px solid var(--surface2); }
         .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
         .modal-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all;
-            color: #c9d1d9; line-height: 1.5; margin: 0; }
+            color: var(--text); line-height: 1.5; margin: 0; }
         .tree-file.clickable { cursor: pointer; }
-        .tree-file.clickable:hover { color: #58a6ff; background: #1c2333; border-radius: 4px; }
+        .tree-file.clickable:hover { color: var(--info); background: #1c2333; border-radius: 4px; }
         /* Chat UI */
         .chat-container { display: flex; flex-direction: column; height: calc(100vh - 160px); }
         .chat-messages { flex: 1; overflow-y: auto; padding: 8px 0; }
         .chat-msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; max-width: 90%; font-size: 14px; line-height: 1.6; }
-        .chat-msg.user { background: #1f6feb; color: #f0f6fc; margin-left: auto; border-bottom-right-radius: 4px; }
-        .chat-msg.assistant { background: #161b22; color: #c9d1d9; border: 1px solid #21262d; margin-right: auto; border-bottom-left-radius: 4px; }
+        .chat-msg.user { background: var(--info); color: var(--text); margin-left: auto; border-bottom-right-radius: 4px; }
+        .chat-msg.assistant { background: var(--surface); color: var(--text); border: 1px solid var(--surface2); margin-right: auto; border-bottom-left-radius: 4px; }
         .chat-msg p { margin: 4px 0; }
-        .chat-msg code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
-        .chat-msg pre { background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
+        .chat-msg code { background: var(--surface2); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+        .chat-msg pre { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
         .chat-msg ul, .chat-msg ol { padding-left: 20px; margin: 4px 0; }
-        .chat-input-wrap { display: flex; gap: 8px; padding: 12px 0; border-top: 1px solid #21262d; }
-        .chat-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px;
-            color: #c9d1d9; font-size: 14px; font-family: inherit; resize: none; outline: none; }
-        .chat-input:focus { border-color: #58a6ff; }
-        .chat-send { background: #1f6feb; color: #fff; border: none; border-radius: 8px; padding: 10px 18px;
+        .chat-input-wrap { display: flex; gap: 8px; padding: 12px 0; border-top: 1px solid var(--surface2); }
+        .chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
+            color: var(--text); font-size: 14px; font-family: inherit; resize: none; outline: none; }
+        .chat-input:focus { border-color: var(--info); }
+        .chat-send { background: var(--info); color: #fff; border: none; border-radius: 8px; padding: 10px 18px;
             cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap; }
         .chat-send:hover { background: #388bfd; }
         .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
-        .chat-typing { color: #8b949e; font-size: 13px; padding: 8px 14px; }
+        .chat-typing { color: var(--text2); font-size: 13px; padding: 8px 14px; }
         /* Chat mode switch */
-        .chat-mode-switch { display: inline-flex; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; margin-right: 8px; flex-shrink: 0; }
-        .mode-pill { padding: 6px 12px; font-size: 12px; cursor: pointer; color: #8b949e; background: #0d1117; user-select: none; white-space: nowrap; transition: all 0.15s; }
-        .mode-pill.active { background: #1f6feb; color: #fff; }
+        .chat-mode-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-right: 8px; flex-shrink: 0; }
+        .mode-pill { padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--text2); background: var(--bg); user-select: none; white-space: nowrap; transition: all 0.15s; }
+        .mode-pill.active { background: var(--info); color: #fff; }
         .mode-pill.hermes.active { background: #8957e5; }
         .mode-pill:not(.active):hover { color: #c9d1d9; }
         .chat-msg.hermes { border-left: 3px solid #8957e5; }
         /* BMC/Other layout: file viewer + AI chat */
         .other-layout { display: flex; flex-direction: column; height: calc(100vh - 52px); }
-        .other-viewer { flex: 1; display: flex; flex-direction: column; border-bottom: 1px solid #21262d; min-height: 200px; }
+        .other-viewer { flex: 1; display: flex; flex-direction: column; border-bottom: 1px solid var(--surface2); min-height: 200px; }
         .other-viewer-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px;
-            background: #161b22; border-bottom: 1px solid #21262d; font-size: 14px; color: #f0f6fc; }
+            background: var(--surface); border-bottom: 1px solid var(--surface2); font-size: 14px; color: var(--text); }
         .other-viewer-body { flex: 1; overflow-y: auto; padding: 16px; }
         .other-viewer-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap;
-            word-break: break-all; color: #c9d1d9; line-height: 1.5; margin: 0; }
+            word-break: break-all; color: var(--text); line-height: 1.5; margin: 0; }
         .other-viewer-body iframe { width: 100%; height: 100%; border: none; }
         .other-chat { flex: 0 0 auto; min-height: 200px; height: 350px; display: flex; flex-direction: column;
-            border-top: 1px solid #21262d; resize: vertical; overflow: hidden; }
-        .other-chat .resize-handle { height: 6px; background: #21262d; cursor: row-resize;
+            border-top: 1px solid var(--surface2); resize: vertical; overflow: hidden; }
+        .other-chat .resize-handle { height: 6px; background: var(--surface2); cursor: row-resize;
             flex-shrink: 0; transition: background 0.15s; }
-        .other-chat .resize-handle:hover { background: #58a6ff; }
+        .other-chat .resize-handle:hover { background: var(--info); }
         .other-chat .chat-container { display: flex; flex-direction: column; height: 100%; }
         .other-chat .chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; }
-        .other-chat .chat-input-wrap { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #21262d; }
-        .other-chat .chat-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
-            padding: 8px 12px; color: #c9d1d9; font-size: 14px; font-family: inherit; resize: none; outline: none; }
-        .other-chat .chat-input:focus { border-color: #58a6ff; }
-        .other-chat .chat-send { background: #1f6feb; color: #fff; border: none; border-radius: 8px;
+        .other-chat .chat-input-wrap { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--surface2); }
+        .other-chat .chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+            padding: 8px 12px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; outline: none; }
+        .other-chat .chat-input:focus { border-color: var(--info); }
+        .other-chat .chat-send { background: var(--info); color: #fff; border: none; border-radius: 8px;
             padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap; }
         .other-chat .chat-send:hover { background: #388bfd; }
         .other-chat .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
         .other-chat .chat-msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 10px;
             max-width: 90%; font-size: 14px; line-height: 1.6; }
-        .other-chat .chat-msg.user { background: #1f6feb; color: #f0f6fc; margin-left: auto; border-bottom-right-radius: 4px; }
-        .other-chat .chat-msg.assistant { background: #161b22; color: #c9d1d9; border: 1px solid #21262d;
+        .other-chat .chat-msg.user { background: var(--info); color: var(--text); margin-left: auto; border-bottom-right-radius: 4px; }
+        .other-chat .chat-msg.assistant { background: var(--surface); color: var(--text); border: 1px solid var(--surface2);
             margin-right: auto; border-bottom-left-radius: 4px; }
         .other-chat .chat-msg p { margin: 4px 0; }
-        .other-chat .chat-msg code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
-        .other-chat .chat-msg pre { background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
+        .other-chat .chat-msg code { background: var(--surface2); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+        .other-chat .chat-msg pre { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
         .other-chat .chat-msg ul, .other-chat .chat-msg ol { padding-left: 20px; margin: 4px 0; }
-        .other-chat .chat-typing { color: #8b949e; font-size: 13px; padding: 6px 12px; }
+        .other-chat .chat-typing { color: var(--text2); font-size: 13px; padding: 6px 12px; }
 
         /* === Dynamic file tabs === */
-        .file-tabs-sep { display: inline-block; width: 1px; height: 24px; background: #30363d; margin: 0 6px; align-self: center; flex-shrink: 0; }
-        .file-tab { display: inline-flex; align-items: center; gap: 4px; padding: 8px 10px 8px 14px; border-radius: 6px 6px 0 0; font-size: 13px; cursor: pointer; background: #21262d; color: #8b949e; border: 1px solid transparent; transition: all 0.15s; white-space: nowrap; max-width: 180px; flex-shrink: 0; }
-        .file-tab:hover { color: #c9d1d9; border-color: #30363d; }
-        .file-tab.active { background: #0d1117; color: #58a6ff; border-color: #1f6feb; border-bottom-color: #0d1117; font-weight: 600; }
+        .file-tabs-sep { display: inline-block; width: 1px; height: 24px; background: var(--border); margin: 0 6px; align-self: center; flex-shrink: 0; }
+        .file-tab { display: inline-flex; align-items: center; gap: 4px; padding: 8px 10px 8px 14px; border-radius: 6px 6px 0 0; font-size: 13px; cursor: pointer; background: var(--surface2); color: var(--text2); border: 1px solid transparent; transition: all 0.15s; white-space: nowrap; max-width: 180px; flex-shrink: 0; }
+        .file-tab:hover { color: #c9d1d9; border-color: var(--border); }
+        .file-tab.active { background: var(--bg); color: var(--info); border-color: #1f6feb; border-bottom-color: var(--bg); font-weight: 600; }
         .file-tab .ft-name { overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
         .file-tab .ft-close { display: inline-block; width: 18px; height: 18px; line-height: 16px; text-align: center; border-radius: 3px; font-size: 12px; color: #484f58; cursor: pointer; flex-shrink: 0; }
-        .file-tab .ft-close:hover { color: #f85149; background: #490202; }
-        .file-tab.dirty .ft-name::after { content: ' ●'; color: #d29922; font-size: 8px; }
+        .file-tab .ft-close:hover { color: var(--error); background: #490202; }
+        .file-tab.dirty .ft-name::after { content: ' ●'; color: var(--warn); font-size: 8px; }
         .tab-content.file-view { padding: 0; }
-        .file-view-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #161b22; border-bottom: 1px solid #21262d; font-size: 13px; color: #8b949e; }
+        .file-view-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--surface2); font-size: 13px; color: var(--text2); }
         .file-view-body { padding: 16px; overflow-y: auto; height: calc(100vh - 160px); }
-        .file-view-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; color: #c9d1d9; line-height: 1.5; margin: 0; }
-        .ai-tab-highlight { background: #1f6feb; color: #fff !important; border-color: #1f6feb; }
-        .ai-tab-highlight.active { background: #0d1117; color: #58a6ff !important; }
+        .file-view-body pre { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; color: var(--text); line-height: 1.5; margin: 0; }
+        .ai-tab-highlight { background: var(--info); color: #fff !important; border-color: var(--info); }
+        .ai-tab-highlight.active { background: var(--bg); color: var(--info) !important; }
         .tab-content.no-pad { padding: 0; }
-        .deep-tab.active { background: #0d1117; color: #bc8cff; border-color: #8957e5; border-bottom-color: #0d1117; font-weight: 600; }
+        .deep-tab.active { background: var(--bg); color: #bc8cff; border-color: #8957e5; border-bottom-color: var(--bg); font-weight: 600; }
         .deep-tab:not(.active):hover { color: #bc8cff; border-color: #8957e5; }
 
     </style>
@@ -173,8 +174,8 @@
     <div class="layout">
         <div class="sidebar" id="sidebar">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-                <a href="/log-analyzer/" style="color:#58a6ff;text-decoration:none;font-size:13px;">← 返回主界面</a>
-                <span style="font-size:11px;color:#6e7681;" id="job-id-display"></span>
+                <a href="/log-analyzer/" style="color:var(--info);text-decoration:none;font-size:13px;">← 返回主界面</a>
+                <span style="font-size:11px;color:var(--text2);" id="job-id-display"></span>
             </div>
             <h3>📁 诊断文件</h3>
             <div class="file-tree" id="file-tree">
@@ -212,7 +213,7 @@
             {% if os_type in ('other', 'bmc') %}
             <div class="tab-content" id="tab-content">
             <div class="tab-content" id="tab-content">
-                <div style="text-align:center;color:#8b949e;padding:60px 20px;">
+                <div style="text-align:center;color:var(--text2);padding:60px 20px;">
                     <div style="font-size:48px;margin-bottom:16px;">📂</div>
                     <p style="font-size:16px;margin-bottom:8px;">选择左侧文件并点击文件名查看内容</p>
                     <p style="font-size:13px;">或点击上方「🤖 AI 分析」开始对话</p>
@@ -243,7 +244,8 @@
         document.getElementById('job-id-display').textContent = 'ID: ' + jobId;
         const osType = '{{ os_type }}';
         const isOtherLayout = osType === 'other' || osType === 'bmc';
-        let currentType = isOtherLayout ? 'chat' : '{{ "linux_overview" if os_type in ("linux", "bmc") else "summary" }}';
+        // 2026-09-08 主人要求：默认视图 = 系统概览（本地快）——AI 整体总结不自动跑（点击才触发）
+        let currentType = isOtherLayout ? 'chat' : '{{ "linux_overview" if os_type in ("linux", "bmc") else "overview" }}';
         // For other layout, activate AI tab by default
         if (isOtherLayout) {
             setTimeout(function() {
@@ -352,11 +354,11 @@
             .then(r => r.json())
             .then(buildTree)
             .catch(err => {
-                document.getElementById('file-tree').innerHTML = '<p style="color:#f85149">加载失败</p>';
+                document.getElementById('file-tree').innerHTML = '<p style="color:var(--error)">加载失败</p>';
             });
         function buildTree(data) {
             const el = document.getElementById('file-tree');
-            let html = `<p style="font-size:11px;color:#484f58;margin-bottom:8px;">${data.total_files} 个文件</p>`;
+            let html = `<p style="font-size:11px;color:var(--text2);margin-bottom:8px;">${data.total_files} 个文件</p>`;
             function render(items, depth) {
                 for (const item of items) {
                     if (item.type === 'dir') {
@@ -516,11 +518,11 @@
         // ── Renderers ──
         function renderSummary(data) {
             const el = document.getElementById('tab-content');
-            const sev = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#58a6ff'};
+            const sev = {critical:'var(--error)', warning:'var(--warn)', ok:'var(--success)', normal:'var(--info)'};
             const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320', normal:'#0d2b4e'};
-            const sevBorder = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#1f6feb'};
+            const sevBorder = {critical:'var(--error)', warning:'var(--warn)', ok:'var(--success)', normal:'var(--info)'};
             const icons = {critical:'🔴', warning:'🟡', ok:'🟢', normal:'🔵'};
-            const s = sev[data.severity] || '#58a6ff';
+            const s = sev[data.severity] || 'var(--info)';
             let html = `<div class="alert alert-summary" style="background:${sevBg[data.severity]};border:2px solid ${sevBorder[data.severity]};color:${s}">`;
             html += `<h3>${icons[data.severity]||'🔵'} ${data.title}</h3>`;
             html += '<ul style="list-style:none;padding:0;">';
@@ -533,7 +535,7 @@
             for (const [k, v] of Object.entries(data.detail || {})) {
                 html += `<div class="card" style="cursor:pointer" onclick="document.querySelector('.tab[data-type=\\'${k}\\']').click()">
                     <h3>${v.title || k}</h3>
-                    <p style="color:#8b949e;font-size:13px;">${v.summary || '点击查看详情 →'}</p>
+                    <p style="color:var(--text2);font-size:13px;">${v.summary || '点击查看详情 →'}</p>
                 </div>`;
             }
             html += '</div>';
@@ -556,7 +558,7 @@
                 ['域/工作组', sys.domain], ['注册用户', sys.registered_owner], ['注册组织', sys.registered_org],
             ];
             for (const [l, v] of sysRows) {
-                if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+                if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:var(--text2);">${l}:</span> <strong>${esc(v)}</strong></div>`;
             }
             html += '</div></div>';
             // ── CPU card ──
@@ -569,7 +571,7 @@
                 for (const [l, v] of [['显卡', gpu.name], ['芯片', gpu.chip],
                     ['专用显存', gpu.dedicated_memory], ['当前分辨率', gpu.current_mode],
                     ['驱动版本', gpu.driver_version], ['驱动日期', gpu.driver_date]]) {
-                    if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+                    if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:var(--text2);">${l}:</span> <strong>${esc(v)}</strong></div>`;
                 }
                 html += '</div></div>';
             }
@@ -577,11 +579,11 @@
             if (disks.length > 0) {
                 html += `<div class="card"><h3>💿 磁盘 (${disks.length} 个)</h3>`;
                 for (const d of disks) {
-                    html += '<div style="background:#0d1117;padding:12px;border-radius:6px;margin-bottom:8px;">';
+                    html += '<div style="background:var(--bg);padding:12px;border-radius:6px;margin-bottom:8px;">';
                     html += `<strong>${esc(d.model || d.vendor || '未知磁盘')}</strong>`;
-                    if (d.capacity) html += `<span style="color:#8b949e;font-size:12px;margin-left:8px;">${esc(d.capacity)}</span>`;
-                    if (d.rpm) html += `<span style="color:#8b949e;font-size:12px;margin-left:8px;">${esc(d.rpm)}</span>`;
-                    html += '<div style="font-size:12px;color:#484f58;margin-top:4px;">';
+                    if (d.capacity) html += `<span style="color:var(--text2);font-size:12px;margin-left:8px;">${esc(d.capacity)}</span>`;
+                    if (d.rpm) html += `<span style="color:var(--text2);font-size:12px;margin-left:8px;">${esc(d.rpm)}</span>`;
+                    html += '<div style="font-size:12px;color:var(--text2);margin-top:4px;">';
                     if (d.serial) html += `SN: ${esc(d.serial)} &nbsp;`;
                     if (d.firmware) html += `固件: ${esc(d.firmware)} &nbsp;`;
                     if (d.smart) html += `SMART: ${esc(d.smart)}`;
@@ -594,11 +596,11 @@
             if (nics.length > 0) {
                 html += `<div class="card"><h3>🌐 网卡 (${nics.length} 个)</h3>`;
                 for (const n of nics) {
-                    html += '<div style="background:#0d1117;padding:10px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
+                    html += '<div style="background:var(--bg);padding:10px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
                     html += `<strong>${esc(n.name)}</strong>`;
-                    html += `<span style="color:#8b949e;margin-left:8px;">${esc(n.status)}</span>`;
+                    html += `<span style="color:var(--text2);margin-left:8px;">${esc(n.status)}</span>`;
                     if (n.ips && n.ips.length > 0) {
-                        html += `<div style="color:#58a6ff;font-size:12px;margin-top:2px;">${n.ips.map(ip => esc(ip)).join(', ')}</div>`;
+                        html += `<div style="color:var(--info);font-size:12px;margin-top:2px;">${n.ips.map(ip => esc(ip)).join(', ')}</div>`;
                     }
                     html += '</div>';
                 }
@@ -608,7 +610,7 @@
             if (Object.keys(sio).length > 0) {
                 html += '<div class="card"><h3>🔌 SIO/EC 控制器</h3><div class="grid-2">';
                 for (const [l, v] of [['产品', sio.product_id], ['固件', sio.firmware], ['事件数', sio.event_count]]) {
-                    if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:#8b949e;">${l}:</span> <strong>${esc(v)}</strong></div>`;
+                    if (v) html += `<div style="padding:4px 0;font-size:13px;"><span style="color:var(--text2);">${l}:</span> <strong>${esc(v)}</strong></div>`;
                 }
                 html += '</div></div>';
             }
@@ -628,18 +630,18 @@
             // ═══ Severity Banner ═══
             const icons = {critical:'🔴', warning:'🟡', ok:'🟢', normal:'🔵'};
             const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320', normal:'#0d2b4e'};
-            const sevBorder = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#1f6feb'};
-            const sevColor = {critical:'#f85149', warning:'#d29922', ok:'#3fb950', normal:'#58a6ff'};
+            const sevBorder = {critical:'var(--error)', warning:'var(--warn)', ok:'var(--success)', normal:'var(--info)'};
+            const sevColor = {critical:'var(--error)', warning:'var(--warn)', ok:'var(--success)', normal:'var(--info)'};
             const s = data.severity || 'normal';
             // ═══ Stats Row ═══
             html += '<div class="grid-2" style="margin-bottom:16px;">';
             const stats = [
-                ['💾 蓝屏', data.bugcheck_count || 0, (data.bugcheck_count>0?'#f85149':'#3fb950')],
-                ['⚡ 意外断电', data.unexpected_shutdowns_count || 0, (data.unexpected_shutdowns_count>0?'#f85149':'#3fb950')],
-                ['🔧 硬件告警', data.hardware_error_count || 0, (data.hardware_error_count>0?'#d29922':'#3fb950')],
-                ['📝 LiveKernelEvent', data.lke_count || 0, (data.lke_count>0?'#d29922':'#8b949e')],
-                ['⚠️ 安装后崩溃', data.correlated_count || 0, (data.correlated_count>0?'#f85149':'#3fb950')],
-                ['📊 System 事件', data.syst_total || 0, '#58a6ff'],
+                ['💾 蓝屏', data.bugcheck_count || 0, (data.bugcheck_count>0?'var(--error)':'var(--success)')],
+                ['⚡ 意外断电', data.unexpected_shutdowns_count || 0, (data.unexpected_shutdowns_count>0?'var(--error)':'var(--success)')],
+                ['🔧 硬件告警', data.hardware_error_count || 0, (data.hardware_error_count>0?'var(--warn)':'var(--success)')],
+                ['📝 LiveKernelEvent', data.lke_count || 0, (data.lke_count>0?'var(--warn)':'var(--text2)')],
+                ['⚠️ 安装后崩溃', data.correlated_count || 0, (data.correlated_count>0?'var(--error)':'var(--success)')],
+                ['📊 System 事件', data.syst_total || 0, 'var(--info)'],
             ];
             for (const [l, n, c] of stats) {
                 html += `<div class="stat-box"><div class="number" style="color:${c};font-size:24px;">${n}</div><div class="label">${l}</div></div>`;
@@ -648,7 +650,7 @@
             // ═══ Section 1: BugCheck / Blue Screen ═══
             const bugchecks = data.bugchecks || [];
             if (bugchecks.length > 0) {
-                html += `<div class="card" style="border-left:3px solid #f85149;"><h3>💾 BugCheck 蓝屏事件 (${bugchecks.length} 次)</h3>`;
+                html += `<div class="card" style="border-left:3px solid var(--error);"><h3>💾 BugCheck 蓝屏事件 (${bugchecks.length} 次)</h3>`;
                 html += '<table><thead><tr><th>时间</th><th>代码</th><th>名称</th><th>参数</th></tr></thead><tbody>';
                 for (const bc of bugchecks.slice(0, 30)) {
                     const bi = bc.bugcheck || {};
@@ -656,9 +658,9 @@
                         <td style="font-family:monospace;font-size:12px;">${fmtTime(bc.time)}</td>
                         <td><span class="badge badge-critical">${escHtml(bi.code || '?')}</span></td>
                         <td style="font-size:13px;"><strong>${escHtml(bi.name || '?')}</strong></td>
-                        <td style="font-family:monospace;font-size:11px;color:#8b949e;">${bc.param1 || ''}</td>
+                        <td style="font-family:monospace;font-size:11px;color:var(--text2);">${bc.param1 || ''}</td>
                     </tr>`;
-                    html += `<tr><td></td><td colspan="3" style="color:#d29922;font-size:12px;padding-top:0;">📖 ${escHtml(bi.description || '')}</td></tr>`;
+                    html += `<tr><td></td><td colspan="3" style="color:var(--warn);font-size:12px;padding-top:0;">📖 ${escHtml(bi.description || '')}</td></tr>`;
                 }
                 html += '</tbody></table></div>';
             }
@@ -668,7 +670,7 @@
                 html += `<div class="card"><h3>⚡ 意外关机/断电事件 (${shutdowns.length} 次)</h3>`;
                 html += '<div class="event-list">';
                 for (const ev of shutdowns.slice(0, 50)) {
-                    const cls = ev.id === 41 ? 'color:#f85149;font-weight:bold;' : 'color:#d29922;';
+                    const cls = ev.id === 41 ? 'color:var(--error);font-weight:bold;' : 'color:var(--warn);';
                     html += `<div class="event-item" style="${cls}">
                         <strong>Event ${ev.id}</strong> | ${fmtTime(ev.time)} | ${escHtml(ev.source||'')} | ${escHtml(ev.description||'')}
                     </div>`;
@@ -678,15 +680,15 @@
             // ═══ Section 3: Crash-Install Correlation ═══
             const correlated = data.correlated || [];
             if (correlated.length > 0) {
-                html += `<div class="card" style="border-left:3px solid #d29922;"><h3>⚠️ 安装/服务变更后发生崩溃 — 关联分析</h3>`;
-                html += `<p style="color:#8b949e;font-size:13px;margin-bottom:12px;">以下事件显示在崩溃/断电前 10 分钟内有服务安装或更新记录（Event 7045 / 19）</p>`;
+                html += `<div class="card" style="border-left:3px solid var(--warn);"><h3>⚠️ 安装/服务变更后发生崩溃 — 关联分析</h3>`;
+                html += `<p style="color:var(--text2);font-size:13px;margin-bottom:12px;">以下事件显示在崩溃/断电前 10 分钟内有服务安装或更新记录（Event 7045 / 19）</p>`;
                 for (const item of correlated) {
                     const crash = item.crash;
-                    html += `<div style="background:#0d1117;border-radius:6px;padding:12px;margin-bottom:8px;">`;
+                    html += `<div style="background:var(--bg);border-radius:6px;padding:12px;margin-bottom:8px;">`;
                     html += `<div style="margin-bottom:8px;"><span class="badge badge-critical">崩溃</span> <strong>Event ${crash.id}</strong> | ${fmtTime(crash.time)} | ${escHtml(crash.description||'')}`;
                     if (crash.service_name) html += ` — ${escHtml(crash.service_name)}`;
                     html += '</div>';
-                    html += '<div style="font-size:12px;color:#8b949e;">⬆️ 崩溃前发生：</div>';
+                    html += '<div style="font-size:12px;color:var(--text2);">⬆️ 崩溃前发生：</div>';
                     for (const inst of (item.preceding_installs || [])) {
                         html += `<div style="font-size:12px;padding:4px 0 4px 16px;font-family:monospace;">
                             <span class="badge badge-warning" style="font-size:10px;">${escHtml(inst.source||'')}</span>
@@ -711,14 +713,14 @@
                 for (const [grp, evts] of Object.entries(grouped)) {
                     const cls = evts[0].level <= 2 ? 'badge-critical' : 'badge-warning';
                     html += `<div style="margin-bottom:12px;">
-                        <h4 style="font-size:14px;color:#c9d1d9;margin-bottom:6px;">${grp} <span class="badge ${cls}" style="font-size:11px;">${evts.length} 条</span></h4>`;
-                    html += '<div style="font-size:12px;color:#8b949e;padding-left:12px;">';
+                        <h4 style="font-size:14px;color:var(--text);margin-bottom:6px;">${grp} <span class="badge ${cls}" style="font-size:11px;">${evts.length} 条</span></h4>`;
+                    html += '<div style="font-size:12px;color:var(--text2);padding-left:12px;">';
                     for (const evt of evts.slice(0, 5)) {
-                        html += `<div style="padding:2px 0;"><span style="font-family:monospace;color:#484f58;">${fmtTime(evt.time)}</span>
-                            ${(evt.details||[]).slice(0,2).map(d => `<code style="color:#c9d1d9;font-size:11px;">${escHtml(d.substring(0,80))}</code>`).join(' | ')}
+                        html += `<div style="padding:2px 0;"><span style="font-family:monospace;color:var(--text2);">${fmtTime(evt.time)}</span>
+                            ${(evt.details||[]).slice(0,2).map(d => `<code style="color:var(--text);font-size:11px;">${escHtml(d.substring(0,80))}</code>`).join(' | ')}
                         </div>`;
                     }
-                    if (evts.length > 5) html += `<div style="color:#484f58;">… 还有 ${evts.length - 5} 条</div>`;
+                    if (evts.length > 5) html += `<div style="color:var(--text2);">… 还有 ${evts.length - 5} 条</div>`;
                     html += '</div></div>';
                 }
                 html += '</div>';
@@ -742,7 +744,7 @@
                     // Color code based on severity implication
                     const kw = ['41','1001','6008'].includes(eid) ? 'badge-critical' :
                                ['7','11','51','55','137','153','219'].includes(eid) ? 'badge-warning' : 'badge-info';
-                    html += `<tr><td><span class="badge ${kw}">${eid}</span></td><td>${cnt}</td><td style="font-size:12px;color:#8b949e;">—</td></tr>`;
+                    html += `<tr><td><span class="badge ${kw}">${eid}</span></td><td>${cnt}</td><td style="font-size:12px;color:var(--text2);">—</td></tr>`;
                 }
                 html += '</tbody></table></div>';
             }
@@ -760,15 +762,15 @@
             const allRestart = data.restart_events || [];
             if (allRestart.length > 0) {
                 html += `<div class="card"><h3>🕐 完整重启/关机时间线 (最近 ${Math.min(allRestart.length, 150)} 条)</h3>`;
-                html += `<p style="color:#8b949e;font-size:12px;margin-bottom:8px;">
+                html += `<p style="color:var(--text2);font-size:12px;margin-bottom:8px;">
                     按 Microsoft 诊断标准追踪 Event 12/13/19/41/1001/1074/6005/6008/6009/7045</p>`;
                 html += '<div class="event-list">';
                 for (const ev of allRestart.slice(0, 150)) {
                     let style = '';
-                    if (ev.id === 41 || ev.id === 1001) style = 'color:#f85149;font-weight:bold;';
-                    else if (ev.id === 6008) style = 'color:#d29922;';
-                    else if (ev.id === 1074) style = 'color:#58a6ff;';
-                    else if (ev.id === 7045 || ev.id === 19) style = 'color:#d29922;';
+                    if (ev.id === 41 || ev.id === 1001) style = 'color:var(--error);font-weight:bold;';
+                    else if (ev.id === 6008) style = 'color:var(--warn);';
+                    else if (ev.id === 1074) style = 'color:var(--info);';
+                    else if (ev.id === 7045 || ev.id === 19) style = 'color:var(--warn);';
                     html += `<div class="event-item" style="${style}">
                         <strong>Event ${ev.id}</strong> | ${fmtTime(ev.time)} | ${escHtml(ev.source||'')} | ${escHtml(ev.description||'')}
                         ${ev.process ? ' — 进程: ' + escHtml(ev.process) : ''}
@@ -776,7 +778,7 @@
                         ${ev.update_kb ? ' — ' + escHtml(ev.update_kb) : ''}
                     </div>`;
                 }
-                if (allRestart.length > 150) html += `<div class="event-item" style="color:#484f58;">… 还有 ${allRestart.length - 150} 条</div>`;
+                if (allRestart.length > 150) html += `<div class="event-item" style="color:var(--text2);">… 还有 ${allRestart.length - 150} 条</div>`;
                 html += '</div></div>';
             }
             if (!html) html = '<div class="alert alert-ok">✅ 未发现异常事件</div>';
@@ -793,7 +795,7 @@
             const unique = data.unique_bugchecks || [];
             if (unique.length > 0) {
                 html += '<div class="card"><h3>🔍 蓝屏概览</h3>';
-                html += `<p style="color:#8b949e;font-size:14px;margin-bottom:12px;">${data.summary || ''}</p>`;
+                html += `<p style="color:var(--text2);font-size:14px;margin-bottom:12px;">${data.summary || ''}</p>`;
                 for (const bc of unique) {
                     html += `<div class="alert alert-critical" style="margin-bottom:8px;">`;
                     html += `<strong>${bc.code}</strong> — ${esc(bc.name)}`;
@@ -804,29 +806,29 @@
             }
             html += `<div class="card"><h3>💾 转储文件详情 (${Object.keys(dumps).length} 个)</h3>`;
             for (const [name, info] of Object.entries(dumps)) {
-                const typeColor = (info.dump_type||'').includes('完整') ? '#d29922' : '#58a6ff';
-                html += `<div style="background:#0d1117;padding:16px;border-radius:8px;margin-bottom:12px;border-left:3px solid ${typeColor};">`;
+                const typeColor = (info.dump_type||'').includes('完整') ? 'var(--warn)' : 'var(--info)';
+                html += `<div style="background:var(--bg);padding:16px;border-radius:8px;margin-bottom:12px;border-left:3px solid ${typeColor};">`;
                 html += `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">`;
                 html += `<strong style="font-size:15px;">📁 ${esc(name)}</strong>`;
-                html += `<span style="font-size:12px;color:#8b949e;">${(info.size_mb||0).toFixed(1)} MB</span>`;
+                html += `<span style="font-size:12px;color:var(--text2);">${(info.size_mb||0).toFixed(1)} MB</span>`;
                 html += `</div>`;
-                html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">📋 类型：<span style="color:${typeColor}">${esc(info.dump_type || '未知')}</span>`;
+                html += `<p style="font-size:12px;color:var(--text2);margin-top:4px;">📋 类型：<span style="color:${typeColor}">${esc(info.dump_type || '未知')}</span>`;
                 if (info.mtime) html += ` &nbsp;|&nbsp; 🕐 ${esc(info.mtime)}`;
                 html += '</p>';
                 if (info.bugcheck) {
                     const bc = info.bugcheck;
                     html += `<div style="background:#1a121d;border:1px solid #3d1e00;border-radius:6px;padding:10px;margin-top:8px;">`;
-                    html += `<strong style="color:#f85149;">🔴 Bug Check: ${bc.code}</strong>`;
-                    html += `<span style="color:#c9d1d9;margin-left:8px;">${esc(bc.name)}</span>`;
-                    html += `<p style="color:#d29922;font-size:13px;margin-top:4px;">📖 ${esc(bc.description)}</p>`;
+                    html += `<strong style="color:var(--error);">🔴 Bug Check: ${bc.code}</strong>`;
+                    html += `<span style="color:var(--text);margin-left:8px;">${esc(bc.name)}</span>`;
+                    html += `<p style="color:var(--warn);font-size:13px;margin-top:4px;">📖 ${esc(bc.description)}</p>`;
                     if (info.bugcheck_params && info.bugcheck_params.length > 0) {
-                        html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">参数: <code style="color:#c9d1d9">${info.bugcheck_params.join(', ')}</code></p>`;
+                        html += `<p style="font-size:12px;color:var(--text2);margin-top:4px;">参数: <code style="color:var(--text)">${info.bugcheck_params.join(', ')}</code></p>`;
                     }
                     html += '</div>';
                 }
                 if (info.drivers && info.drivers.length > 0) {
-                    html += `<p style="font-size:12px;color:#8b949e;margin-top:6px;">📦 已加载驱动: `;
-                    html += info.drivers.slice(0, 12).map(d => `<code style="color:#c9d1d9;font-size:11px;">${esc(d)}</code>`).join(', ');
+                    html += `<p style="font-size:12px;color:var(--text2);margin-top:6px;">📦 已加载驱动: `;
+                    html += info.drivers.slice(0, 12).map(d => `<code style="color:var(--text);font-size:11px;">${esc(d)}</code>`).join(', ');
                     html += '</p>';
                 }
                 html += '</div>';
@@ -849,11 +851,11 @@
             }
             html += '</div></div>';
             // Official code lookup reference
-            html += `<div class="card" style="background:#0d1117;border:1px solid #30363d;">
-                <p style="margin:0;font-size:13px;color:#8b949e;">
+            html += `<div class="card" style="background:var(--bg);border:1px solid var(--border);">
+                <p style="margin:0;font-size:13px;color:var(--text2);">
                     💡 如需查询 SIO 事件代码的官方完整说明，请访问
                     <a href="https://www.thinkworkstationsoftware.com/codes" target="_blank" rel="noopener"
-                       style="color:#58a6ff;">thinkworkstationsoftware.com/codes</a>
+                       style="color:var(--info);">thinkworkstationsoftware.com/codes</a>
                 </p>
             </div>`;
             // Issues
@@ -867,7 +869,7 @@
             }
             // All events summary
             html += `<div class="card"><h3>📊 事件统计</h3>`;
-            html += `<p style="color:#8b949e;">${data.summary || ''}</p>`;
+            html += `<p style="color:var(--text2);">${data.summary || ''}</p>`;
             html += `<p style="font-size:13px;margin-top:8px;">启动记录: <strong>${data.boot_count}</strong> 次 | 事件代码类型: ${(data.unique_codes||[]).map(c => `<span class="badge badge-info" style="margin:2px;">${c}</span>`).join(' ')}</p>`;
             html += '</div>';
             // Timeline
@@ -875,7 +877,7 @@
             if (all.length > 0) {
                 html += `<div class="card"><h3>🕐 事件时间线 (最近 ${all.length} 条)</h3><div class="event-list">`;
                 for (const e of all.reverse()) {
-                    const cls = e.code !== 'N000' ? 'color:#d29922;' : '';
+                    const cls = e.code !== 'N000' ? 'color:var(--warn);' : '';
                     html += `<div class="event-item" style="${cls}"><strong>#${e.index}</strong> | ${e.time} | <strong>${e.code}</strong> | ${esc(e.data)}</div>`;
                 }
                 html += '</div></div>';
@@ -887,8 +889,8 @@
         if (loadingEl) loadingEl.innerHTML = `
             <div style="text-align:center;padding:60px 20px;">
                 <div style="font-size:64px;margin-bottom:16px;">🔬</div>
-                <h2 style="color:#f0f6fc;font-size:20px;margin-bottom:8px;">文件已就绪</h2>
-                <p style="color:#8b949e;font-size:14px;">点击上方标签开始诊断分析</p>
+                <h2 style="color:var(--text);font-size:20px;margin-bottom:8px;">文件已就绪</h2>
+                <p style="color:var(--text2);font-size:14px;">点击上方标签开始诊断分析</p>
             </div>`;
         function fmtTime(ts) {
             if (!ts) return '-';
@@ -956,7 +958,7 @@
             saveChatState();
             // Show loading in tab content
             tabContent.className = 'tab-content file-view no-pad';
-            tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(fileName) + '</span><span style="color:#484f58;">加载中...</span></div><div class="file-view-body"><pre>加载中...</pre></div>';
+            tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(fileName) + '</span><span style="color:var(--text2);">加载中...</span></div><div class="file-view-body"><pre>加载中...</pre></div>';
 
             // HTML 文件：iframe 渲染显示（2026-08-30——主人要求显示渲染页面而非源码）
             var _parts = (fileName || '').split('.');
@@ -1003,7 +1005,7 @@
             // Render content
             tabContent.className = 'tab-content file-view no-pad';
             if (t.content !== null) {
-                tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(t.name) + '</span><span style="color:#484f58;">' + (t.meta || '') + '</span></div><div class="file-view-body"><pre>' + escHtml(t.content) + '</pre></div>';
+                tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(t.name) + '</span><span style="color:var(--text2);">' + (t.meta || '') + '</span></div><div class="file-view-body"><pre>' + escHtml(t.content) + '</pre></div>';
             } else {
                 tabContent.innerHTML = '<div class="file-view-header"><span>📄 ' + escHtml(t.name) + '</span></div><div class="file-view-body"><pre>加载中...</pre></div>';
             }
@@ -1059,24 +1061,24 @@
                 let html = '';
                 if (info.bugcheck) {
                     html += '<div style="background:#1a121d;border:1px solid #3d1e00;border-radius:6px;padding:12px;margin-bottom:12px;">';
-                    html += `<strong style="color:#f85149;font-size:18px;">🔴 Bug Check: ${escHtml(info.bugcheck.code)}</strong>`;
-                    html += `<div style="color:#c9d1d9;font-size:15px;margin-top:4px;">${escHtml(info.bugcheck.name)}</div>`;
-                    html += `<p style="color:#d29922;font-size:13px;margin-top:6px;">📖 ${escHtml(info.bugcheck.description)}</p>`;
+                    html += `<strong style="color:var(--error);font-size:18px;">🔴 Bug Check: ${escHtml(info.bugcheck.code)}</strong>`;
+                    html += `<div style="color:var(--text);font-size:15px;margin-top:4px;">${escHtml(info.bugcheck.name)}</div>`;
+                    html += `<p style="color:var(--warn);font-size:13px;margin-top:6px;">📖 ${escHtml(info.bugcheck.description)}</p>`;
                     if (info.bugcheck_params && info.bugcheck_params.length > 0) {
-                        html += `<p style="font-size:12px;color:#8b949e;margin-top:4px;">参数: <code style="color:#c9d1d9">${info.bugcheck_params.map(escHtml).join(', ')}</code></p>`;
+                        html += `<p style="font-size:12px;color:var(--text2);margin-top:4px;">参数: <code style="color:var(--text)">${info.bugcheck_params.map(escHtml).join(', ')}</code></p>`;
                     }
                     html += '</div>';
                 }
                 if (info.drivers && info.drivers.length > 0) {
-                    html += '<div style="margin-top:8px;"><strong style="color:#8b949e;">📦 已加载驱动 (' + info.driver_count + ' 个)</strong>';
-                    html += '<div style="font-size:12px;color:#c9d1d9;margin-top:4px;line-height:1.8;">';
-                    html += info.drivers.map(d => `<code style="background:#21262d;padding:2px 6px;border-radius:4px;margin:2px;">${escHtml(d)}</code>`).join(' ');
+                    html += '<div style="margin-top:8px;"><strong style="color:var(--text2);">📦 已加载驱动 (' + info.driver_count + ' 个)</strong>';
+                    html += '<div style="font-size:12px;color:var(--text);margin-top:4px;line-height:1.8;">';
+                    html += info.drivers.map(d => `<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;margin:2px;">${escHtml(d)}</code>`).join(' ');
                     html += '</div></div>';
                 }
                 if (info.parse_error) {
-                    html += `<p style="color:#d29922;font-size:12px;margin-top:8px;">⚠️ ${escHtml(info.parse_error)}</p>`;
+                    html += `<p style="color:var(--warn);font-size:12px;margin-top:8px;">⚠️ ${escHtml(info.parse_error)}</p>`;
                 }
-                if (!html) html = '<p style="color:#8b949e;">无法提取更多信息（文件可能损坏或为空）</p>';
+                if (!html) html = '<p style="color:var(--text2);">无法提取更多信息（文件可能损坏或为空）</p>';
                 document.getElementById('modal-content').innerHTML = '<div style="font-family: -apple-system, sans-serif;">' + html + '</div>';
             } catch (err) {
                 document.getElementById('modal-content').textContent = '❌ 加载失败: ' + err.message;
@@ -1105,7 +1107,7 @@
                 ['时区', os.timezone === 'UTC+08:00' ? 'UTC+8（东八区）' : (os.timezone ? esc(os.timezone) : '')],
                 ['架构', os.arch],
             ];
-            for (const [l, v] of osRows) if (v) html += `<div><span style="color:#8b949e;">${l}：</span><strong>${v}</strong></div>`;
+            for (const [l, v] of osRows) if (v) html += `<div><span style="color:var(--text2);">${l}：</span><strong>${v}</strong></div>`;
             html += '</div></div>';
 
             // ── 🔩 硬件信息(表格)──
@@ -1126,7 +1128,7 @@
             if (Object.keys(sw).length) {
                 const labels = { docker: 'Docker', desktop: '桌面环境', user: '主要用户' };
                 html += '<div class="card"><h3>📦 软件信息</h3><div style="font-size:13px;line-height:1.9;">';
-                for (const [k, v] of Object.entries(sw)) html += `<div><span style="color:#8b949e;">${labels[k] || k}：</span><strong>${esc(v)}</strong></div>`;
+                for (const [k, v] of Object.entries(sw)) html += `<div><span style="color:var(--text2);">${labels[k] || k}：</span><strong>${esc(v)}</strong></div>`;
                 html += '</div></div>';
             }
 
@@ -1140,11 +1142,11 @@
         function renderLinuxKernel(data) {
             const el = document.getElementById('tab-content');
             const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320'};
-            const sevBd = {critical:'#f85149', warning:'#d29922', ok:'#3fb950'};
+            const sevBd = {critical:'var(--error)', warning:'var(--warn)', ok:'var(--success)'};
             let html = `<div class="alert" style="background:${sevBg[data.severity]};border:2px solid ${sevBd[data.severity]}">`;
-            html += `<h3>🔧 ${data.title}</h3><p style="color:#8b949e;font-size:13px;">${data.summary || ''}</p></div>`;
+            html += `<h3>🔧 ${data.title}</h3><p style="color:var(--text2);font-size:13px;">${data.summary || ''}</p></div>`;
             html += '<div class="grid-2" style="margin-bottom:16px;">';
-            for (const [l, n, c] of [['OOM Killer', data.oom_count||0, '#f85149'], ['Kernel Panic', data.panic_count||0, '#f85149'], ['硬件错误', data.hw_error_count||0, '#d29922'], ['段错误', data.segfault_count||0, '#d29922']])
+            for (const [l, n, c] of [['OOM Killer', data.oom_count||0, 'var(--error)'], ['Kernel Panic', data.panic_count||0, 'var(--error)'], ['硬件错误', data.hw_error_count||0, 'var(--warn)'], ['段错误', data.segfault_count||0, 'var(--warn)']])
                 html += `<div class="stat-box"><div class="number" style="color:${c};font-size:24px;">${n}</div><div class="label">${l}</div></div>`;
             html += '</div>';
             if (data.findings && data.findings.length) {
@@ -1164,7 +1166,7 @@
             let html = '<div class="grid-2" style="margin-bottom:16px;">';
             const s = data.stats || {};
             for (const [l, n] of [['服务失败', s.service_failures], ['认证失败', s.auth_failures], ['磁盘错误', s.disk_errors], ['网络错误', s.network_errors]])
-                html += `<div class="stat-box"><div class="number" style="color:#58a6ff;font-size:24px;">${n||0}</div><div class="label">${l}</div></div>`;
+                html += `<div class="stat-box"><div class="number" style="color:var(--info);font-size:24px;">${n||0}</div><div class="label">${l}</div></div>`;
             html += '</div>';
             if (data.findings && data.findings.length) {
                 html += '<div class="card"><h3>⚠️ 发现</h3><ul>';
@@ -1176,7 +1178,7 @@
         function renderLinuxSummary(data) {
             const el = document.getElementById('tab-content');
             const sevBg = {critical:'#490202', warning:'#3d1e00', ok:'#0d3320'};
-            const sevBd = {critical:'#f85149', warning:'#d29922', ok:'#3fb950'};
+            const sevBd = {critical:'var(--error)', warning:'var(--warn)', ok:'var(--success)'};
             const icons = {critical:'🔴', warning:'🟡', ok:'🟢'};
             let html = `<div class="alert" style="background:${sevBg[data.severity]};border:2px solid ${sevBd[data.severity]};color:${sevBd[data.severity]}">`;
             html += `<h3>${icons[data.severity]||'🔵'} ${data.title}</h3><ul style="list-style:none;padding:0;">`;
@@ -1184,7 +1186,7 @@
             html += '</ul></div>';
             html += '<div class="grid-2">';
             for (const [k, v] of Object.entries(data.detail||{}))
-                html += `<div class="card" style="cursor:pointer" onclick="document.querySelector('.tab[data-type=\\'${k}\\']').click()"><h3>${v.title||k}</h3><p style="color:#8b949e;">${v.summary||'点击查看详情 →'}</p></div>`;
+                html += `<div class="card" style="cursor:pointer" onclick="document.querySelector('.tab[data-type=\\'${k}\\']').click()"><h3>${v.title||k}</h3><p style="color:var(--text2);">${v.summary||'点击查看详情 →'}</p></div>`;
             html += '</div>';
             el.innerHTML = html;
         }
@@ -1207,7 +1209,7 @@
             if (chatHistory[mode]) {
                 document.getElementById('chat-messages').innerHTML = chatHistory[mode];
             } else {
-                document.getElementById('chat-messages').innerHTML = '<div class="chat-msg assistant" style="font-size:14px;"><p>👋 你好！我是诊断助手，可以帮你分析这个日志包。</p><p style="color:#8b949e;font-size:12px;margin-top:4px;">试试问我：<br>• 这台机器有什么严重问题？<br>• 频繁意外断电的原因？<br>• 帮我看看硬盘健康状态</p></div>';
+                document.getElementById('chat-messages').innerHTML = '<div class="chat-msg assistant" style="font-size:14px;"><p>👋 你好！我是诊断助手，可以帮你分析这个日志包。</p><p style="color:var(--text2);font-size:12px;margin-top:4px;">试试问我：<br>• 这台机器有什么严重问题？<br>• 频繁意外断电的原因？<br>• 帮我看看硬盘健康状态</p></div>';
             }
             document.getElementById('chat-input').focus();
             setChatMode(mode);
@@ -1312,12 +1314,12 @@
             document.getElementById('other-viewer-title').textContent = '📄 ' + name;
             document.getElementById('other-viewer-path').textContent = path;
             var body = document.getElementById('other-viewer-body');
-            body.innerHTML = '<div style="text-align:center;color:#8b949e;padding:40px;"><div class="spinner"></div><p>加载中...</p></div>';
+            body.innerHTML = '<div style="text-align:center;color:var(--text2);padding:40px;"><div class="spinner"></div><p>加载中...</p></div>';
             fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(path))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.error) {
-                        body.innerHTML = '<p style="color:#f85149;">' + esc(data.error) + '</p>';
+                        body.innerHTML = '<p style="color:var(--error);">' + esc(data.error) + '</p>';
                     } else {
                         var content = data.content || '';
                         var isHtml = /\.(html|htm)$/i.test(name);
@@ -1330,25 +1332,25 @@
                     }
                 })
                 .catch(function(err) {
-                    body.innerHTML = '<p style="color:#f85149;">加载失败: ' + err.message + '</p>';
+                    body.innerHTML = '<p style="color:var(--error);">加载失败: ' + err.message + '</p>';
                 });
         }
         function openDumpInViewer(path, name) {
             document.getElementById('other-viewer-title').textContent = '💾 ' + name;
             document.getElementById('other-viewer-path').textContent = path;
             var body = document.getElementById('other-viewer-body');
-            body.innerHTML = '<div style="text-align:center;color:#8b949e;padding:40px;"><div class="spinner"></div><p>解析 Dump 中...</p></div>';
+            body.innerHTML = '<div style="text-align:center;color:var(--text2);padding:40px;"><div class="spinner"></div><p>解析 Dump 中...</p></div>';
             fetch('../api/file-content/' + jobId + '?path=' + encodeURIComponent(path))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.error) {
-                        body.innerHTML = '<p style="color:#f85149;">' + esc(data.error) + '</p>';
+                        body.innerHTML = '<p style="color:var(--error);">' + esc(data.error) + '</p>';
                     } else {
                         body.innerHTML = '<pre>' + esc(data.content || '无数据') + '</pre>';
                     }
                 })
                 .catch(function(err) {
-                    body.innerHTML = '<p style="color:#f85149;">加载失败: ' + err.message + '</p>';
+                    body.innerHTML = '<p style="color:var(--error);">加载失败: ' + err.message + '</p>';
                 });
         }
         // ═══ BMC/Other chat: global send function (accessible from inline handlers) ═══
@@ -1500,7 +1502,7 @@
                         startHeight = chatPanel.offsetHeight;
                         document.addEventListener('mousemove', onDrag);
                         document.addEventListener('mouseup', onDrop);
-                        handle.style.background = '#58a6ff';
+                        handle.style.background = 'var(--info)';
                     });
                     function onDrag(e) {
                         var newH = startHeight - (e.clientY - startY);
