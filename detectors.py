@@ -95,8 +95,12 @@ def extract_archive(filepath: Path) -> Path:
         subprocess.run(['7z', 'x', '-y', str(filepath), f'-o{extract_dir}'],
                        capture_output=True, timeout=120)
     elif ext == '.rar':
-        subprocess.run(['unrar', 'x', '-y', str(filepath), str(extract_dir)],
-                       capture_output=True, timeout=120)
+        # 2026-09-17：优先用 7z（服务器必有，且支持 rar/rar5），unrar 作兜底
+        r = subprocess.run(['7z', 'x', '-y', str(filepath), f'-o{extract_dir}'],
+                           capture_output=True, timeout=180)
+        if r.returncode != 0:
+            subprocess.run(['unrar', 'x', '-y', str(filepath), str(extract_dir)],
+                           capture_output=True, timeout=180)
     elif ext == '.zip':
         try:
             extract_zip_safe(filepath, extract_dir)

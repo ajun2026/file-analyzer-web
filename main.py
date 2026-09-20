@@ -448,8 +448,16 @@ async def upload_file(request: Request, file: UploadFile = File(...), sn: str = 
         filepath.unlink(missing_ok=True)
         return JSONResponse({"error": "游客上传限制 200MB——常规分析"}, status_code=403)
 
-    # Extract
-    extract_dir = extract_archive(filepath)
+    # Extract（2026-09-17：加异常处理——解压失败返回 JSON 错误，避免 500 HTML）
+    try:
+        extract_dir = extract_archive(filepath)
+    except Exception as e:
+        import traceback
+        print(f"[upload] extract failed for {filepath.name}: {e}\n{traceback.format_exc()}", flush=True)
+        return JSONResponse({
+            "error": f"解压失败：{type(e).__name__}: {str(e)[:200]}",
+            "hint": "请确认压缩包完整；支持的格式：zip / 7z / rar / tar.gz / tar.xz / tzz",
+        }, status_code=400)
     tslog, os_type = find_log_dir(extract_dir)
     
     # Auto handle double-compressed / nested archives

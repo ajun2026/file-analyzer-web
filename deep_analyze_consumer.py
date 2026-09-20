@@ -78,8 +78,10 @@ def call_llm(context: str, message: str) -> str:
         channels.append({"key": backup_key, "url": backup_url, "model": backup_model})
 
     errors = []
+    RETRIES = 3            # 2026-09-17：2 → 3 次（对付网关抖动/限流）
+    TIMEOUT = 240          # 2026-09-17：180 → 240 秒（长上下文 + 推理模型可能较慢）
     for ch in channels:
-        for attempt in range(2):
+        for attempt in range(RETRIES):
             try:
                 payload = {
                     "model": ch["model"],
@@ -90,15 +92,24 @@ def call_llm(context: str, message: str) -> str:
                     "temperature": 0.2,
                     "max_tokens": 8000,
                 }
-                resp = httpx.post(f"{ch['url']}/chat/completions", json=payload, timeout=180,
+                resp = httpx.post(f"{ch['url']}/chat/completions", json=payload, timeout=TIMEOUT,
                                   headers={"Authorization": f"Bearer {ch['key']}"})
                 resp.raise_for_status()
-                content = (resp.json()["choices"][0]["message"].get("content") or "").strip()
+                _msg = resp.json()["choices"][0]["message"]
+                content = (_msg.get("content") or "").strip()
                 if content:
                     return content  # ✅ 成功出口
+                # 2026-09-17 兜底：推理模型（如 deepseek-v4-flash）content 可能为空
+                # 而思考内容在 reasoning_content —— 取它，避免误判"空回复"
+                reasoning = (_msg.get("reasoning_content") or "").strip()
+                if reasoning:
+                    return reasoning + "\n\n（注：以上为模型思考内容——本次正式回答为空，已兜底返回）"
                 errors.append(f"{ch['url']}: 空回复(第{attempt+1}次)")
             except Exception as e:
                 errors.append(f"{ch['url']}: {str(e)[:120]}(第{attempt+1}次)")
+            # 重试间隔递增（网关抖动时给恢复时间）
+            if attempt < RETRIES - 1:
+                time.sleep(2 * (attempt + 1))
     return f"【深度分析失败】AI 分析所有通道均失败: {'; '.join(errors)}"
 
 

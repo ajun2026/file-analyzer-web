@@ -75,6 +75,35 @@ log-analyzer/
 | Function Calling | Windows / Linux | AI 主动调工具 (list_files → read_dump → read_evtx) 多步推理 | 2-4 分钟 |
 | 上下文注入 | BMC / Other | 遍历所有可读文件 → 拼入 system prompt → 一次 API 调用 | 秒级 |
 
+### AI 调用可靠性（v3.10 起）
+
+**多通道 + 重试 + 推理模型兜底**，配置见 `.env`：
+
+```bash
+DEEPSEEK_API_KEY=sk-...                      # 主通道
+DEEPSEEK_BASE_URL=https://<gateway>/v1
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_API_KEY_2=                          # 可选：备用通道（主通道全失败时启用）
+DEEPSEEK_BASE_URL_2=
+DEEPSEEK_MODEL_2=
+```
+
+调用策略（`deep_analyze_consumer.py` → `call_llm`）：
+
+| 项 | 取值 | 说明 |
+|---|---|---|
+| 重试次数 | 3 次/通道 | 主→备通道依次尝试；重试间隔递增（2s / 4s），应对网关抖动与限流 |
+| 单次超时 | 240s | 长日志上下文 + 推理模型较慢，超时过短会误判失败 |
+| 推理模型兜底 | `reasoning_content` | 若响应 `content` 为空但 `reasoning_content` 有内容（推理模型特性），取思考内容返回，避免误报"空回复" |
+
+**常见现象与排查**
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 页面提示"AI 分析所有通道均失败: ... 空回复" | 网关临时抖动/限流；或 `max_tokens` 被推理内容耗尽 | 已加 3 次重试 + reasoning 兜底；若持续出现，直连 API 分层实测（curl /chat/completions），确认模型与网关状态 |
+| 响应慢（>2 分钟） | 日志上下文大 + 推理模型 | 属正常；超时已放宽至 240s |
+| 只配了备用通道 | 主通道 key 缺失 | 至少要填 `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL` |
+
 ### 其他特性
 
 - 拖拽上传 + 主机 SN 模态确认（防跨用户 SN 泄漏）
@@ -118,21 +147,67 @@ log-analyzer/
 
 ## 环境要求
 
-| 组件 | 版本 | 说明 |
-|------|------|------|
-| Python | 3.10+ | 需 pip 安装依赖 |
-| Nginx | ≥1.18 | 反向代理 |
-| 7-Zip | 任意 | `.7z` 解压 |
-| unrar | 任意 | `.rar` 解压 |
-| lzop | 任意 | `.tzz` 解压 (IBM XCC FFDC) |
+| 组件 | 版本 | 说明 | 缺失后果 |
+|------|------|------|----------|
+| Python | 3.10+ | 需 pip 安装依赖 | — |
+| Nginx | ≥1.18 | 反向代理 | — |
+| 7-Zip | 任意 | `.7z` 解压；**同时作为 `.rar` 的首选解压器** | `.7z` / `.rar` 上传即失败 |
+| unrar | 任意 | `.rar` 解压（7z 失败时的兜底） | `.rar` 解压兜底不可用 |
+| lzop | 任意 | `.tzz` 解压 (IBM XCC FFDC) | `.tzz` 上传即失败 |
 
 ```bash
-# Ubuntu/Debian 安装系统依赖
+# Ubuntu/Debian 安装系统依赖（缺一不可）
 apt install nginx python3 python3-pip p7zip-full unrar lzop
+# 若 apt 找不到 unrar（部分源未收录），可装免费版：
+#   apt install unrar-free
 
 # 安装 Python 依赖
 pip install -r requirements.txt
 ```
+
+### ⚠️ 部署必查：压缩工具是否正确安装
+
+**这是最常见的部署故障**——缺失解压工具时，上传压缩包会直接返回 500 或在页面提示"日志目录不存在，请重新上传"。
+
+部署完成后必须逐项自查：
+
+```bash
+# 1) 三个解压工具都存在
+which 7z unrar lzop
+
+# 2) 7z 支持 rar（v3.10 起 .rar 优先走 7z，见下方说明）
+7z i | grep -i rar      # 应输出 Rar / Rar5 支持行
+
+# 3) 实测解压（造一个 zip 与 rar 测试包）
+7z a -tzip /tmp/t.zip /etc/hostname && 7z x -y /tmp/t.zip -o/tmp/t_out && ls /tmp/t_out
+```
+
+**关于 `.rar` 的处理策略（v3.10 起）**
+
+`.rar` 解压采用「7z 优先 + unrar 兜底」双保险（`detectors.py` → `extract_archive`）：
+
+```python
+elif ext == '.rar':
+    r = subprocess.run(['7z', 'x', '-y', str(filepath), f'-o{extract_dir}'], ...)
+    if r.returncode != 0:
+        subprocess.run(['unrar', 'x', '-y', str(filepath), str(extract_dir)], ...)
+```
+
+- 原因：部分服务器镜像未收录 `unrar`（版权原因，`unrar` 与 `unrar-free` 在不同发行版/源中可用性不一），而 `p7zip-full` 几乎处处可用且支持 `rar/rar5`
+- 因此**只要 `p7zip-full` 到位，`.rar` 通常即可正常解压**；安装 `unrar` 可进一步提升兼容性（分卷、旧版加密等场景）
+
+**解压失败时的错误提示**
+
+v3.10 起，解压异常会返回结构化 JSON（不再抛 500 裸错误页）：
+
+```json
+{
+  "error": "解压失败：FileNotFoundError: ...",
+  "hint": "请确认压缩包完整；支持的格式：zip / 7z / rar / tar.gz / tar.xz / tzz"
+}
+```
+
+若页面出现该提示，按 `hint` 检查：压缩包完整性 → 上表三个工具是否装齐。
 
 ---
 
