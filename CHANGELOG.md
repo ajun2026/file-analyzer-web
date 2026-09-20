@@ -1,3 +1,30 @@
+## v3.11 — 2026-09-20（AI 逻辑对齐 + 端口可配 + 依赖补全）
+
+> 来源：其它服务器部署 v3.10 时的反馈——包内混入"比现网旧"的文件，且 AI 逻辑只改了一半。
+
+### 修复
+
+- **AI 对话/总结路径未同步可靠性改造**：v3.10 只改了 `deep_analyze_consumer.py`（深度分析），
+  而 `chat/function_call.py`（AI 对话 / 整体总结）仍是老逻辑——重试 2 次、超时 120s、无推理兜底。
+  - 修复：`chat/function_call.py` 的 `_call_deepseek` 同步为 **重试 3 次（递增间隔 2s/4s）+ 超时 240s + `reasoning_content` 兜底**
+  - 现在两条路径（对话 / 深度分析）口径一致
+
+- **端口硬编码 8082**（`main.py`）：部署到使用其他端口（如 8002）的环境时需手工改代码，
+  且易与同机服务冲突。
+  - 修复：改为环境变量可配 —— `PORT=8002 python3 main.py`；未设置时默认 8082（兼容现有部署）
+  - 同时 host 可配（`HOST` 环境变量）
+
+- **`requirements.txt` 缺 `python-dotenv`**：`main.py` / `chat/function_call.py` 使用
+  `from dotenv import load_dotenv`，但依赖清单未声明——缺包装机后报
+  `legal header value b'Bearer'`（进程无 DEEPSEEK_API_KEY），AI 功能全部不可用。
+  - 修复：requirements.txt 追加 `python-dotenv>=1.0.0`
+
+### 部署提示
+
+- 升级后重启服务，确认启动日志输出 `[main] starting on <host>:<port>`
+- 自定义端口：`PORT=8002 python3 main.py`（无需改代码）
+- 依赖安装：`pip install -r requirements.txt`（已含 python-dotenv）
+
 ## v3.10 — 2026-09-18（压缩格式兼容 + AI 调用可靠性 + 部署文档）
 
 ### 修复

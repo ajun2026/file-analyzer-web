@@ -327,12 +327,15 @@ def _ai_channels() -> list:
 
 async def _call_deepseek(messages: list) -> dict:
     """Call AI API（多通道自动故障切换——2026-08-28 ② 备用 AI 通道）。
-    主 → 备，每通道最多 2 次；content 非空为唯一成功出口；全部失败抛 RuntimeError（逐条错误）。"""
+    主 → 备，每通道最多 3 次（2026-09-18：2→3 次，递增间隔）；content 非空为成功出口；
+    content 空但 reasoning_content 有内容时兜底返回（推理模型特性）；全部失败抛 RuntimeError。"""
     errors = []
+    RETRIES = 3          # 2026-09-18：2 → 3 次（应对网关抖动/限流）
+    TIMEOUT = 240.0      # 2026-09-18：120 → 240s（长上下文 + 推理模型较慢）
     for ch in _ai_channels():
-        for attempt in range(2):
+        for attempt in range(RETRIES):
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                     resp = await client.post(
                         f"{ch['url']}/chat/completions",
                         headers={
@@ -350,12 +353,22 @@ async def _call_deepseek(messages: list) -> dict:
                     )
                     resp.raise_for_status()
                     data = resp.json()
-                    content = data["choices"][0]["message"].get("content") or ""
+                    _m = data["choices"][0]["message"]
+                    content = _m.get("content") or ""
                     if content.strip():
-                        return data  # ✅ 唯一成功出口
+                        return data  # ✅ 成功出口
+                    # 2026-09-18 兜底：推理模型（deepseek-v4-flash 等）content 可能为空，
+                    # 正文缺失但 reasoning_content 有思考内容 —— 取它，避免误判"空回复"
+                    reasoning = (_m.get("reasoning_content") or "").strip()
+                    if reasoning:
+                        _m["content"] = reasoning + "\n\n（注：以上为模型思考内容——本次正式回答为空，已兜底返回）"
+                        return data
                     errors.append(f"{ch['url']}: 空回复(第{attempt+1}次)")
             except Exception as e:
                 errors.append(f"{ch['url']}: {str(e)[:120]}(第{attempt+1}次)")
+            # 重试间隔递增（网关抖动时给恢复时间）
+            if attempt < RETRIES - 1:
+                await asyncio.sleep(2 * (attempt + 1))
     raise RuntimeError(f"AI 分析所有通道均失败: {'; '.join(errors)}")
 async def _chat_function_calling(job_id: str, user_message: str, tslog):
     """Function Calling mode for Windows/Linux logs"""

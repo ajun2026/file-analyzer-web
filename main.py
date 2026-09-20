@@ -1092,4 +1092,10 @@ async def chat_hermes_poll(request: Request, job_id: str, rid: str = ""):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8082)
+    # 端口可配（2026-09-18）：环境变量 PORT 优先；未设置时从 .env 读取；兜底 8082
+    # 历史问题：曾硬编码 8082，部署到使用 8002 的环境时端口不一致（需手工改代码）
+    # 用法：PORT=8002 python3 main.py   （不同环境用不同端口，无需改代码）
+    _port = int(os.getenv("PORT") or os.getenv("APP_PORT") or "8082")
+    _host = os.getenv("HOST") or "127.0.0.1"
+    print(f"[main] starting on {_host}:{_port}", flush=True)
+    uvicorn.run(app, host=_host, port=_port)
