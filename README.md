@@ -1,3 +1,16 @@
+> ⚠️ **本项目已迁移**
+>
+> 新地址：**https://github.com/ajun2026/clouddiag-suite**
+>
+> 原两个仓库（`cloud-ai-remote-diag` 与 `file-analyzer-web`）已合并为 `clouddiag-suite`：
+> - 云端 AI 远程诊断 → `clouddiag-server/`
+> - 日志分析（IDG）→ `log-analyzer/`
+> - 桥接器 → `clouddiag-bridge/`
+>
+> 本仓库保留作为**历史归档**，不再更新。最后版本：v3.11（2026-09-20）
+
+---
+
 # Log Analyzer — 日志诊断分析平台
 
 统一的日志诊断分析系统，支持 **Windows 蓝屏诊断**、**Linux 系统日志**、**BMC/XCC 服务器日志** 三类日志包的自动识别、结构化分析和 AI 辅助诊断。
